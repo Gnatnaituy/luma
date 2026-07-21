@@ -7,6 +7,7 @@ import SwiftUI
 final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private let clipboard = ClipboardMonitor()
     private let stocks = StockStore()
+    private let applicationSettings = ApplicationSettings()
     private let shortcutSettings = ShortcutSettings()
     private let pluginSettings = PluginSettings()
     private let aiSettings = AISettings()
@@ -35,7 +36,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
         buildPanel()
-        buildStatusItem()
+        applicationSettings.applyHandler = { [weak self] isVisible in
+            self?.setStatusItemVisible(isVisible)
+        }
+        setStatusItemVisible(applicationSettings.showsStatusBarIcon)
         clipboard.start()
         installedApps.start()
 
@@ -72,6 +76,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             model: model,
             clipboard: clipboard,
             stocks: stocks,
+            applicationSettings: applicationSettings,
             shortcutSettings: shortcutSettings,
             pluginSettings: pluginSettings,
             aiSettings: aiSettings,
@@ -109,8 +114,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     private func buildStatusItem() {
+        guard statusItem == nil else { return }
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-        item.button?.image = NSImage(systemSymbolName: "sparkle.magnifyingglass", accessibilityDescription: "Luma")
+        item.button?.image = LumaStatusIcon.image
+        item.button?.imagePosition = .imageOnly
+        item.button?.toolTip = "Luma"
 
         let menu = NSMenu()
         let show = NSMenuItem(
@@ -126,6 +134,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         menu.addItem(quit)
         item.menu = menu
         statusItem = item
+    }
+
+    private func setStatusItemVisible(_ isVisible: Bool) {
+        if isVisible {
+            buildStatusItem()
+        } else if let statusItem {
+            NSStatusBar.system.removeStatusItem(statusItem)
+            self.statusItem = nil
+        }
     }
 
     @objc private func showFromMenu() {

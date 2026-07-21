@@ -27,6 +27,7 @@ swiftc \
 mkdir -p "$APP_DIR/Contents/MacOS" "$APP_DIR/Contents/Resources"
 cp "$EXECUTABLE" "$APP_DIR/Contents/MacOS/Luma"
 cp "$PROJECT_DIR/Resources/Info.plist" "$APP_DIR/Contents/Info.plist"
+cp "$PROJECT_DIR/Resources/Luma.icns" "$APP_DIR/Contents/Resources/Luma.icns"
 chmod +x "$APP_DIR/Contents/MacOS/Luma"
 codesign --force --deep --sign - "$APP_DIR"
 

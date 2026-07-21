@@ -278,8 +278,27 @@ enum CoreTests {
             "translation editor exposes only the SwiftUI outer border"
         )
         try expect(
-            SettingsSection.allCases.map(\.title) == ["快捷键管理", "插件关键词管理", "剪贴板设置", "AI 管理", "翻译设置", "股票设置"],
-            "settings navigation includes clipboard, AI, and translation management"
+            SettingsSection.allCases.map(\.title) == ["应用设置", "快捷键管理", "插件关键词管理", "剪贴板设置", "AI 管理", "翻译设置", "股票设置"],
+            "application settings leads the settings navigation"
+        )
+        let applicationSuiteName = "app.luma.application-tests." + UUID().uuidString
+        let applicationDefaults = UserDefaults(suiteName: applicationSuiteName)!
+        applicationDefaults.removePersistentDomain(forName: applicationSuiteName)
+        defer { applicationDefaults.removePersistentDomain(forName: applicationSuiteName) }
+        let applicationSettings = ApplicationSettings(defaults: applicationDefaults)
+        var appliedStatusBarVisibility: Bool?
+        applicationSettings.applyHandler = { appliedStatusBarVisibility = $0 }
+        applicationSettings.setShowsStatusBarIcon(false)
+        let restoredApplicationSettings = ApplicationSettings(defaults: applicationDefaults)
+        try expect(
+            !applicationSettings.showsStatusBarIcon
+                && !restoredApplicationSettings.showsStatusBarIcon
+                && appliedStatusBarVisibility == false,
+            "status bar icon visibility defaults on, applies immediately, and persists"
+        )
+        try expect(
+            LumaStatusIcon.image.isTemplate && LumaStatusIcon.image.size == NSSize(width: 18, height: 18),
+            "Luma status icon is a native 18-point template image"
         )
         try expect(
             Plugin.allCases.allSatisfy { pluginSettings.isEnabled($0) && pluginSettings.keywords(for: $0) == $0.keywords },
@@ -387,8 +406,18 @@ enum CoreTests {
         defer { recentDefaults.removePersistentDomain(forName: recentSuiteName) }
         let recentUsage = RecentUsageStore(defaults: recentDefaults)
         var openedApplicationURL: URL?
+        let searchableClipboardText = ClipboardEntry(payload: .text("Luma clipboard searchable invoice 42"))
+        let searchableClipboardLink = ClipboardEntry(
+            payload: .link(URL(string: "https://example.com/docs/clipboard-searchable")!)
+        )
+        let searchableClipboardFile = ClipboardEntry(
+            payload: .files([URL(fileURLWithPath: "/tmp/Quarterly Clipboard Searchable.pdf")])
+        )
+        let navigationClipboard = ClipboardMonitor(
+            entries: [searchableClipboardText, searchableClipboardLink, searchableClipboardFile]
+        )
         let navigationModel = LauncherModel(
-            clipboard: ClipboardMonitor(entries: []),
+            clipboard: navigationClipboard,
             pluginSettings: pluginSettings,
             installedApps: installedApps,
             recentUsage: recentUsage,
@@ -509,6 +538,24 @@ enum CoreTests {
         try expect(
             openedApplicationURL?.resolvingSymlinksInPath().path == fakeTerminal.resolvingSymlinksInPath().path,
             "Enter launches the selected macOS app"
+        )
+        navigationModel.query = "quarterly searchable"
+        try expect(
+            navigationModel.filteredClipboardEntries.map(\.id) == [searchableClipboardFile.id]
+                && navigationModel.filteredPlugins.isEmpty
+                && navigationModel.filteredApplications.isEmpty,
+            "launcher search matches multiple terms in clipboard file names and paths"
+        )
+        var pastedClipboardEntry: ClipboardEntry?
+        navigationModel.activateSelected { pastedClipboardEntry = $0 }
+        try expect(
+            pastedClipboardEntry?.id == searchableClipboardFile.id,
+            "Enter pastes the selected clipboard search result"
+        )
+        navigationModel.query = "clipboard-searchable"
+        try expect(
+            navigationModel.filteredClipboardEntries.map(\.id) == [searchableClipboardLink.id],
+            "launcher search matches clipboard link contents"
         )
         try expect(
             recentUsage.items.first?.application?.url.resolvingSymlinksInPath().path
