@@ -76,6 +76,12 @@ final class LauncherModel: ObservableObject {
         installedApps.search(query)
     }
 
+    var filteredClipboardEntries: [ClipboardEntry] {
+        let value = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !value.isEmpty else { return [] }
+        return Array(clipboard.entries.lazy.filter { $0.matchesSearch(value) }.prefix(50))
+    }
+
     var recentItems: [RecentUsageItem] {
         Array(recentUsage.items.lazy.filter { item in
             switch item.kind {
@@ -120,6 +126,7 @@ final class LauncherModel: ObservableObject {
         guard !value.isEmpty,
               instantCalculation == nil,
               filteredApplications.isEmpty,
+              filteredClipboardEntries.isEmpty,
               filteredPlugins.count == 1,
               let plugin = filteredPlugins.first else { return false }
         openPlugin(plugin)
@@ -131,6 +138,10 @@ final class LauncherModel: ObservableObject {
     }
 
     func activateSelected() {
+        activateSelected(pasteClipboardEntry: nil)
+    }
+
+    func activateSelected(pasteClipboardEntry: ((ClipboardEntry) -> Void)?) {
         let calculation = instantCalculation
         if let calculation, selectedResult == 0 {
             clipboard.copy(calculation)
@@ -147,11 +158,25 @@ final class LauncherModel: ObservableObject {
         let applications = filteredApplications
         if applications.indices.contains(applicationIndex) {
             openApplication(applications[applicationIndex])
+            return
+        }
+        let clipboardIndex = applicationIndex - applications.count
+        let clipboardEntries = filteredClipboardEntries
+        if clipboardEntries.indices.contains(clipboardIndex) {
+            let entry = clipboardEntries[clipboardIndex]
+            if let pasteClipboardEntry {
+                pasteClipboardEntry(entry)
+            } else {
+                clipboard.copy(entry)
+            }
         }
     }
 
     func moveSelection(_ delta: Int) {
-        let count = filteredPlugins.count + filteredApplications.count + (instantCalculation == nil ? 0 : 1)
+        let count = filteredPlugins.count
+            + filteredApplications.count
+            + filteredClipboardEntries.count
+            + (instantCalculation == nil ? 0 : 1)
         guard count > 0 else { selectedResult = 0; return }
         selectedResult = (selectedResult + delta + count) % count
     }

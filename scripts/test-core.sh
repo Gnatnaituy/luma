@@ -17,6 +17,7 @@ swiftc \
   -framework Security \
   -framework SwiftUI \
   -framework Translation \
+  "$PROJECT_DIR/Sources/Luma/ApplicationSettings.swift" \
   "$PROJECT_DIR/Sources/Luma/AIService.swift" \
   "$PROJECT_DIR/Sources/Luma/AISettings.swift" \
   "$PROJECT_DIR/Sources/Luma/AISettingsViews.swift" \
@@ -25,6 +26,7 @@ swiftc \
   "$PROJECT_DIR/Sources/Luma/ClipboardPaster.swift" \
   "$PROJECT_DIR/Sources/Luma/ExpressionEvaluator.swift" \
   "$PROJECT_DIR/Sources/Luma/LumaButtonStyles.swift" \
+  "$PROJECT_DIR/Sources/Luma/LumaStatusIcon.swift" \
   "$PROJECT_DIR/Sources/Luma/InstalledAppIndex.swift" \
   "$PROJECT_DIR/Sources/Luma/JSONSyntaxEditor.swift" \
   "$PROJECT_DIR/Sources/Luma/LauncherModel.swift" \

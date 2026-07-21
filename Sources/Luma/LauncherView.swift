@@ -5,6 +5,7 @@ struct LauncherView: View {
     @ObservedObject var model: LauncherModel
     @ObservedObject var clipboard: ClipboardMonitor
     @ObservedObject var stocks: StockStore
+    @ObservedObject var applicationSettings: ApplicationSettings
     @ObservedObject var shortcutSettings: ShortcutSettings
     @ObservedObject var pluginSettings: PluginSettings
     @ObservedObject var aiSettings: AISettings
@@ -39,16 +40,22 @@ struct LauncherView: View {
                 .buttonStyle(LumaIconButtonStyle(size: 32, cornerRadius: 8))
                 .help("返回搜索")
             } else {
-                Image(systemName: "sparkle.magnifyingglass")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(Color.accentColor)
+                Image(nsImage: NSApplication.shared.applicationIconImage)
+                    .resizable()
+                    .interpolation(.high)
+                    .scaledToFit()
+                    .frame(width: 30, height: 30)
+                    .scaleEffect(1.22)
+                    .shadow(color: Color.black.opacity(0.10), radius: 1, y: 0.5)
                     .frame(width: 32, height: 32)
+                    .clipped()
+                    .accessibilityLabel("Luma")
             }
 
             LauncherSearchField(
                 text: $model.query,
                 focusRequest: model.focusRequest,
-                onSubmit: model.activateSelected,
+                onSubmit: { model.activateSelected(pasteClipboardEntry: pasteClipboardEntry) },
                 onMove: model.moveSelection,
                 onEscape: {
                     if !model.handleEscape() { dismiss() }
@@ -81,7 +88,7 @@ struct LauncherView: View {
     private var content: some View {
         switch model.presentation {
         case .results:
-            SearchResultsView(model: model)
+            SearchResultsView(model: model, pasteClipboardEntry: pasteClipboardEntry)
         case .plugin:
             if let plugin = model.selectedPlugin {
                 PluginDetailView(
@@ -94,6 +101,7 @@ struct LauncherView: View {
             }
         case .settings:
             SettingsView(
+                applicationSettings: applicationSettings,
                 shortcuts: shortcutSettings,
                 plugins: pluginSettings,
                 stocks: stocks,
@@ -182,6 +190,7 @@ private struct RecentItemRow: View {
 
 private struct SearchResultsView: View {
     @ObservedObject var model: LauncherModel
+    let pasteClipboardEntry: (ClipboardEntry) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -222,13 +231,29 @@ private struct SearchResultsView: View {
                         )
                     }
 
+                    ForEach(Array(model.filteredClipboardEntries.enumerated()), id: \.element.id) { index, entry in
+                        let calculationOffset = model.instantCalculation == nil ? 0 : 1
+                        let offset = calculationOffset
+                            + model.filteredPlugins.count
+                            + model.filteredApplications.count
+                        ResultRow(
+                            symbol: entry.kind.symbol,
+                            tint: clipboardTint(for: entry.kind),
+                            title: entry.searchDisplayTitle,
+                            subtitle: clipboardSubtitle(for: entry),
+                            isSelected: model.selectedResult == index + offset,
+                            action: { pasteClipboardEntry(entry) }
+                        )
+                    }
+
                     if model.filteredPlugins.isEmpty,
                        model.filteredApplications.isEmpty,
+                       model.filteredClipboardEntries.isEmpty,
                        model.instantCalculation == nil {
                         ContentUnavailableView(
-                            "没有匹配的工具或 App",
+                            "没有匹配的结果",
                             systemImage: "magnifyingglass",
-                            description: Text("试试 calc、json、Safari、备忘录或翻译")
+                            description: Text("可搜索插件、App、剪贴板内容或输入算式")
                         )
                         .padding(.top, 60)
                     }
@@ -237,9 +262,24 @@ private struct SearchResultsView: View {
         }
         .padding(24)
     }
+
+    private func clipboardTint(for kind: ClipboardKind) -> Color {
+        switch kind {
+        case .text: .indigo
+        case .image: .pink
+        case .file: .orange
+        case .link: .blue
+        }
+    }
+
+    private func clipboardSubtitle(for entry: ClipboardEntry) -> String {
+        let favorite = entry.isFavorite ? " · 收藏" : ""
+        return "剪贴板 · \(entry.kind.title)\(favorite) · \(entry.copiedAt.formatted(.dateTime.hour().minute())) · 回车粘贴"
+    }
 }
 
 enum SettingsSection: String, CaseIterable, Identifiable {
+    case application
     case shortcuts
     case pluginKeywords
     case clipboard
@@ -251,6 +291,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
+        case .application: "应用设置"
         case .shortcuts: "快捷键管理"
         case .pluginKeywords: "插件关键词管理"
         case .clipboard: "剪贴板设置"
@@ -262,6 +303,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
 
     var subtitle: String {
         switch self {
+        case .application: "配置 Luma 的系统集成与显示方式"
         case .shortcuts: "配置全局唤起与关键词快捷键"
         case .pluginKeywords: "控制插件启用状态与搜索关键词"
         case .clipboard: "设置历史记录的本地保存时长"
@@ -273,6 +315,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
 
     var symbol: String {
         switch self {
+        case .application: "app.badge"
         case .shortcuts: "keyboard"
         case .pluginKeywords: "text.badge.plus"
         case .clipboard: "clipboard"
@@ -284,23 +327,26 @@ enum SettingsSection: String, CaseIterable, Identifiable {
 }
 
 struct SettingsView: View {
+    @ObservedObject var applicationSettings: ApplicationSettings
     @ObservedObject var shortcuts: ShortcutSettings
     @ObservedObject var plugins: PluginSettings
     @ObservedObject var stocks: StockStore
     @ObservedObject var clipboard: ClipboardMonitor
     @ObservedObject var aiSettings: AISettings
     @ObservedObject var translationSettings: TranslationSettings
-    @State private var selection: SettingsSection = .shortcuts
+    @State private var selection: SettingsSection = .application
 
     init(
+        applicationSettings: ApplicationSettings,
         shortcuts: ShortcutSettings,
         plugins: PluginSettings,
         stocks: StockStore,
         clipboard: ClipboardMonitor,
         aiSettings: AISettings,
         translationSettings: TranslationSettings,
-        initialSelection: SettingsSection = .shortcuts
+        initialSelection: SettingsSection = .application
     ) {
+        self.applicationSettings = applicationSettings
         self.shortcuts = shortcuts
         self.plugins = plugins
         self.stocks = stocks
@@ -370,6 +416,8 @@ struct SettingsView: View {
                 }
 
                 switch selection {
+                case .application:
+                    applicationContent
                 case .shortcuts:
                     shortcutContent
                 case .pluginKeywords:
@@ -388,6 +436,36 @@ struct SettingsView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var applicationContent: some View {
+        HStack(spacing: 14) {
+            Image(nsImage: LumaStatusIcon.image)
+                .renderingMode(.template)
+                .foregroundStyle(Color.primary)
+                .frame(width: 34, height: 34)
+                .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 8))
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("状态栏图标")
+                    .font(.headline)
+                Text("在 macOS 菜单栏显示 Luma，可快速打开或退出应用。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer()
+
+            Toggle(
+                "显示",
+                isOn: Binding(
+                    get: { applicationSettings.showsStatusBarIcon },
+                    set: applicationSettings.setShowsStatusBarIcon
+                )
+            )
+            .toggleStyle(LumaToggleStyle())
+        }
+        .settingsCard()
     }
 
     private var shortcutContent: some View {
@@ -713,8 +791,13 @@ private struct ResultRow: View {
                     .frame(width: 42, height: 42)
                     .background(tint.opacity(0.11), in: RoundedRectangle(cornerRadius: 10))
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(title).font(.headline)
-                    Text(subtitle).font(.caption).foregroundStyle(.secondary)
+                    Text(title)
+                        .font(.headline)
+                        .lineLimit(1)
+                    Text(subtitle)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
                 }
                 Spacer()
                 if isSelected {

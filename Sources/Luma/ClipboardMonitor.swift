@@ -88,6 +88,36 @@ struct ClipboardEntry: Identifiable, Equatable {
         case .link(let url): return url.absoluteString
         }
     }
+
+    var searchDisplayTitle: String {
+        let compactTitle = title
+            .split(whereSeparator: \Character.isWhitespace)
+            .joined(separator: " ")
+        return compactTitle.isEmpty ? kind.title : compactTitle
+    }
+
+    func matchesSearch(_ query: String) -> Bool {
+        let terms = query.split(whereSeparator: \Character.isWhitespace).map(String.init)
+        guard !terms.isEmpty else { return false }
+
+        let payloadText: String
+        switch payload {
+        case .text(let value):
+            payloadText = value
+        case .image:
+            payloadText = "剪贴板图片 图片 image"
+        case .files(let urls):
+            payloadText = urls
+                .flatMap { [$0.lastPathComponent, $0.path] }
+                .joined(separator: " ")
+        case .link(let url):
+            payloadText = url.absoluteString
+        }
+
+        let searchableText = [payloadText, kind.title, isFavorite ? "收藏" : ""]
+            .joined(separator: " ")
+        return terms.allSatisfy(searchableText.localizedCaseInsensitiveContains)
+    }
 }
 
 final class ClipboardMonitor: ObservableObject {
