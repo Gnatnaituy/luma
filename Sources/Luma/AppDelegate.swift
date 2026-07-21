@@ -1,0 +1,350 @@
+import AppKit
+import Carbon.HIToolbox
+import Combine
+import SwiftUI
+
+@MainActor
+final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
+    private let clipboard = ClipboardMonitor()
+    private let stocks = StockStore()
+    private let shortcutSettings = ShortcutSettings()
+    private let pluginSettings = PluginSettings()
+    private let aiSettings = AISettings()
+    private lazy var translationSettings = TranslationSettings(aiSettings: aiSettings)
+    private let installedApps = InstalledAppIndex()
+    private let recentUsage = RecentUsageStore()
+    private lazy var model = LauncherModel(
+        clipboard: clipboard,
+        pluginSettings: pluginSettings,
+        installedApps: installedApps,
+        recentUsage: recentUsage
+    )
+    private var panel: LauncherPanel?
+    private var statusItem: NSStatusItem?
+    private var hotKey: HotKeyManager?
+    private var registeredShortcut = GlobalShortcut.default
+    private var keywordHotKeys: [UUID: HotKeyManager] = [:]
+    private var keywordHotKeyIdentifiers: [UUID: UInt32] = [:]
+    private var nextKeywordHotKeyIdentifier: UInt32 = 100
+    private var windowPlacement = LauncherWindowPlacement()
+    private var isUserResizingPanel = false
+    private var pasteTargetApplication: NSRunningApplication?
+    private var isShowingPastePermissionAlert = false
+    private var cancellables = Set<AnyCancellable>()
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        NSApp.setActivationPolicy(.accessory)
+        buildPanel()
+        buildStatusItem()
+        clipboard.start()
+        installedApps.start()
+
+        shortcutSettings.applyHandler = { [weak self] shortcut in
+            self?.replaceHotKey(with: shortcut) ?? false
+        }
+        shortcutSettings.keywordApplyHandler = { [weak self] id, previous, shortcut in
+            self?.replaceKeywordHotKey(id: id, previous: previous, with: shortcut) ?? false
+        }
+        if !replaceHotKey(with: shortcutSettings.shortcut) {
+            if shortcutSettings.shortcut == .default {
+                shortcutSettings.reportRegistrationFailure()
+            } else {
+                shortcutSettings.bind(.default)
+            }
+        }
+        for binding in shortcutSettings.keywordBindings {
+            guard let shortcut = binding.shortcut else { continue }
+            if !replaceKeywordHotKey(id: binding.id, previous: nil, with: shortcut) {
+                shortcutSettings.reportKeywordRegistrationFailure(id: binding.id)
+            }
+        }
+        observePresentation()
+
+        showPanel()
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        clipboard.stop()
+    }
+
+    private func buildPanel() {
+        let content = LauncherView(
+            model: model,
+            clipboard: clipboard,
+            stocks: stocks,
+            shortcutSettings: shortcutSettings,
+            pluginSettings: pluginSettings,
+            aiSettings: aiSettings,
+            translationSettings: translationSettings,
+            pasteClipboardEntry: { [weak self] entry in
+                self?.pasteClipboardEntry(entry)
+            },
+            dismiss: { [weak self] in
+                self?.panel?.orderOut(nil)
+            }
+        )
+
+        let panel = LauncherPanel(
+            contentRect: NSRect(x: 0, y: 0, width: 920, height: model.preferredWindowHeight),
+            styleMask: [.titled, .fullSizeContentView, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+        panel.title = "Luma"
+        panel.titleVisibility = .hidden
+        panel.titlebarAppearsTransparent = true
+        panel.isMovableByWindowBackground = true
+        panel.isReleasedWhenClosed = false
+        panel.level = .floating
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient]
+        panel.backgroundColor = .clear
+        panel.isOpaque = false
+        panel.hasShadow = true
+        LauncherPanelAppearance.hideWindowControls(in: panel)
+        panel.minSize = NSSize(width: 920, height: 58)
+        panel.maxSize = NSSize(width: 920, height: 1_200)
+        panel.delegate = self
+        panel.contentView = NSHostingView(rootView: content)
+        self.panel = panel
+    }
+
+    private func buildStatusItem() {
+        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+        item.button?.image = NSImage(systemSymbolName: "sparkle.magnifyingglass", accessibilityDescription: "Luma")
+
+        let menu = NSMenu()
+        let show = NSMenuItem(
+            title: "显示 Luma（\(shortcutSettings.shortcut.displayString)）",
+            action: #selector(showFromMenu),
+            keyEquivalent: ""
+        )
+        show.target = self
+        menu.addItem(show)
+        menu.addItem(.separator())
+        let quit = NSMenuItem(title: "退出 Luma", action: #selector(quitApp), keyEquivalent: "q")
+        quit.target = self
+        menu.addItem(quit)
+        item.menu = menu
+        statusItem = item
+    }
+
+    @objc private func showFromMenu() {
+        showPanel()
+    }
+
+    @objc private func quitApp() {
+        NSApp.terminate(nil)
+    }
+
+    private func togglePanel() {
+        if panel?.isVisible == true, panel?.isKeyWindow == true {
+            panel?.orderOut(nil)
+        } else {
+            showPanel()
+        }
+    }
+
+    private func showPanel(initialQuery: String = "") {
+        guard let panel else { return }
+        if let frontmostApplication = NSWorkspace.shared.frontmostApplication,
+           frontmostApplication.processIdentifier != ProcessInfo.processInfo.processIdentifier {
+            pasteTargetApplication = frontmostApplication
+        }
+        model.prepareForPresentation(query: initialQuery)
+        resizePanel(to: model.preferredWindowHeight, animated: false)
+        NSApp.activate(ignoringOtherApps: true)
+        panel.makeKeyAndOrderFront(nil)
+    }
+
+    private func pasteClipboardEntry(_ entry: ClipboardEntry) {
+        guard let targetApplication = pasteTargetApplication,
+              !targetApplication.isTerminated else {
+            NSSound.beep()
+            return
+        }
+        clipboard.copy(entry)
+        guard ClipboardPasteShortcut.requestEventPostingAccess() else {
+            showPastePermissionAlert()
+            return
+        }
+
+        panel?.orderOut(nil)
+        targetApplication.activate(options: [.activateAllWindows])
+        postPasteWhenTargetIsFrontmost(targetApplication, remainingAttempts: 12)
+    }
+
+    private func postPasteWhenTargetIsFrontmost(
+        _ targetApplication: NSRunningApplication,
+        remainingAttempts: Int
+    ) {
+        guard !targetApplication.isTerminated else { return }
+        if NSWorkspace.shared.frontmostApplication?.processIdentifier == targetApplication.processIdentifier {
+            if !ClipboardPasteShortcut.postToFrontmostApplication() { NSSound.beep() }
+            return
+        }
+        guard remainingAttempts > 0 else {
+            if !ClipboardPasteShortcut.post(to: targetApplication.processIdentifier) { NSSound.beep() }
+            return
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+            self?.postPasteWhenTargetIsFrontmost(
+                targetApplication,
+                remainingAttempts: remainingAttempts - 1
+            )
+        }
+    }
+
+    private func showPastePermissionAlert() {
+        guard let panel, !isShowingPastePermissionAlert else { return }
+        isShowingPastePermissionAlert = true
+        let alert = NSAlert()
+        alert.messageText = "需要允许 Luma 发送粘贴快捷键"
+        alert.informativeText = "条目已复制到剪贴板。请在“系统设置 → 隐私与安全性 → 辅助功能”中启用 Luma，然后再次双击条目。"
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: "打开系统设置")
+        alert.addButton(withTitle: "稍后")
+        alert.beginSheetModal(for: panel) { [weak self] response in
+            self?.isShowingPastePermissionAlert = false
+            guard response == .alertFirstButtonReturn,
+                  let settingsURL = URL(
+                      string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
+                  ) else { return }
+            NSWorkspace.shared.open(settingsURL)
+        }
+    }
+
+    private func observePresentation() {
+        Publishers.CombineLatest3(model.$query, model.$selectedPlugin, model.$isShowingSettings)
+            .dropFirst()
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _, _, _ in
+                guard let self else { return }
+                self.resizePanel(to: self.model.preferredWindowHeight, animated: self.panel?.isVisible == true)
+            }
+            .store(in: &cancellables)
+    }
+
+    private func resizePanel(to height: CGFloat, animated: Bool) {
+        guard let panel, let screen = NSScreen.main ?? NSScreen.screens.first else { return }
+        let width: CGFloat = 920
+        let minimumHeight = model.presentation == .search ? height : 280
+        panel.minSize = NSSize(width: width, height: minimumHeight)
+        panel.maxSize = NSSize(width: width, height: screen.visibleFrame.height)
+        let frame = windowPlacement.frame(
+            width: width,
+            height: height,
+            minimumHeight: minimumHeight,
+            visibleFrame: screen.visibleFrame
+        )
+        panel.setFrame(frame, display: true, animate: animated)
+    }
+
+    private func replaceHotKey(with shortcut: GlobalShortcut) -> Bool {
+        let previousShortcut = registeredShortcut
+        hotKey = nil
+
+        if let manager = makeHotKey(for: shortcut) {
+            hotKey = manager
+            registeredShortcut = shortcut
+            updateStatusMenuTitle()
+            return true
+        }
+
+        hotKey = makeHotKey(for: previousShortcut)
+        return false
+    }
+
+    private func makeHotKey(for shortcut: GlobalShortcut) -> HotKeyManager? {
+        HotKeyManager(keyCode: shortcut.keyCode, modifiers: shortcut.modifiers, identifier: 1) { [weak self] in
+            self?.togglePanel()
+        }
+    }
+
+    private func replaceKeywordHotKey(
+        id: UUID,
+        previous: GlobalShortcut?,
+        with shortcut: GlobalShortcut?
+    ) -> Bool {
+        keywordHotKeys[id] = nil
+        guard let shortcut else {
+            keywordHotKeyIdentifiers[id] = nil
+            return true
+        }
+
+        let identifier = keywordHotKeyIdentifier(for: id)
+        if let manager = makeKeywordHotKey(id: id, shortcut: shortcut, identifier: identifier) {
+            keywordHotKeys[id] = manager
+            return true
+        }
+
+        if let previous,
+           let restored = makeKeywordHotKey(id: id, shortcut: previous, identifier: identifier) {
+            keywordHotKeys[id] = restored
+        }
+        return false
+    }
+
+    private func makeKeywordHotKey(
+        id: UUID,
+        shortcut: GlobalShortcut,
+        identifier: UInt32
+    ) -> HotKeyManager? {
+        HotKeyManager(
+            keyCode: shortcut.keyCode,
+            modifiers: shortcut.modifiers,
+            identifier: identifier
+        ) { [weak self] in
+            guard let self else { return }
+            self.showPanel(initialQuery: self.shortcutSettings.keyword(for: id) ?? "")
+        }
+    }
+
+    private func keywordHotKeyIdentifier(for id: UUID) -> UInt32 {
+        if let existing = keywordHotKeyIdentifiers[id] { return existing }
+        let identifier = nextKeywordHotKeyIdentifier
+        nextKeywordHotKeyIdentifier += 1
+        keywordHotKeyIdentifiers[id] = identifier
+        return identifier
+    }
+
+    private func updateStatusMenuTitle() {
+        statusItem?.menu?.item(at: 0)?.title = "显示 Luma（\(registeredShortcut.displayString)）"
+    }
+
+    func windowDidResignKey(_ notification: Notification) {
+        guard let panel,
+              LauncherPanelDismissalPolicy.shouldDismissOnResignKey(
+                  isPresentingSheet: isShowingPastePermissionAlert,
+                  hasAttachedSheet: panel.attachedSheet != nil
+              ) else { return }
+        panel.orderOut(nil)
+    }
+
+    func windowDidMove(_ notification: Notification) {
+        guard let window = notification.object as? NSWindow, window === panel else { return }
+        windowPlacement.remember(frame: window.frame)
+    }
+
+    func windowWillStartLiveResize(_ notification: Notification) {
+        guard let window = notification.object as? NSWindow, window === panel else { return }
+        isUserResizingPanel = true
+    }
+
+    func windowDidResize(_ notification: Notification) {
+        guard isUserResizingPanel,
+              let window = notification.object as? NSWindow,
+              window === panel else { return }
+        windowPlacement.rememberHeight(window.frame.height)
+    }
+
+    func windowDidEndLiveResize(_ notification: Notification) {
+        guard let window = notification.object as? NSWindow, window === panel else { return }
+        windowPlacement.rememberHeight(window.frame.height)
+        isUserResizingPanel = false
+    }
+}
+
+final class LauncherPanel: NSPanel {
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { true }
+}
