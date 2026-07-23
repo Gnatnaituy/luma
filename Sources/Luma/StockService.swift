@@ -69,7 +69,29 @@ enum StockSymbolParser {
 struct StockPoint: Codable, Equatable, Identifiable {
     let date: String
     let close: Double
+    let open: Double?
+    let high: Double?
+    let low: Double?
+    let volume: Double?
+
+    init(
+        date: String,
+        close: Double,
+        open: Double? = nil,
+        high: Double? = nil,
+        low: Double? = nil,
+        volume: Double? = nil
+    ) {
+        self.date = date
+        self.close = close
+        self.open = open
+        self.high = high
+        self.low = low
+        self.volume = volume
+    }
+
     var id: String { date }
+    var hasOHLC: Bool { open != nil && high != nil && low != nil }
 }
 
 struct StockSnapshot: Codable, Equatable, Identifiable {
@@ -92,6 +114,24 @@ struct StockSnapshot: Codable, Equatable, Identifiable {
 
     var id: String { symbol }
     var isRising: Bool { change >= 0 }
+    var amplitudePercent: Double {
+        guard previousClose != 0 else { return 0 }
+        return (high - low) / previousClose * 100
+    }
+    var openChangePercent: Double {
+        guard previousClose != 0 else { return 0 }
+        return (open - previousClose) / previousClose * 100
+    }
+    var dayPosition: Double? {
+        guard high > low else { return nil }
+        return min(max((price - low) / (high - low), 0), 1)
+    }
+    var periodHigh: Double? { points.map(\.close).max() }
+    var periodLow: Double? { points.map(\.close).min() }
+    var periodChangePercent: Double? {
+        guard let first = points.first?.close, first != 0, let last = points.last?.close else { return nil }
+        return (last - first) / first * 100
+    }
 }
 
 enum StockColorTheme: String, CaseIterable, Codable, Identifiable {
@@ -144,6 +184,92 @@ enum StockServiceError: LocalizedError {
         case .provider(let message): "行情服务错误：\(message)"
         case .symbolNotFound: "未找到该股票代码"
         case .malformedData: "行情数据格式无法解析"
+        }
+    }
+}
+
+struct StockSearchResult: Equatable, Identifiable {
+    let symbol: String
+    let name: String
+    let market: String
+
+    var id: String { symbol }
+}
+
+struct EastMoneyStockSearchService {
+    func search(_ query: String, count: Int = 8) async throws -> [StockSearchResult] {
+        let value = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !value.isEmpty else { return [] }
+        var components = URLComponents(string: "https://searchapi.eastmoney.com/api/suggest/get")!
+        components.queryItems = [
+            URLQueryItem(name: "input", value: value),
+            URLQueryItem(name: "type", value: "14"),
+            URLQueryItem(name: "count", value: String(min(max(count, 1), 20)))
+        ]
+        guard let url = components.url else { throw StockServiceError.invalidResponse }
+        var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 10)
+        request.setValue("Luma/1.1 (macOS; native Swift)", forHTTPHeaderField: "User-Agent")
+        request.setValue("https://quote.eastmoney.com/", forHTTPHeaderField: "Referer")
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            throw StockServiceError.invalidResponse
+        }
+        return try Self.parse(data: data)
+    }
+
+    static func parse(data: Data) throws -> [StockSearchResult] {
+        let response = try JSONDecoder().decode(Response.self, from: data)
+        var seen = Set<String>()
+        return (response.table.data ?? []).compactMap { item in
+            let symbol: String
+            let market: String
+            switch item.classify {
+            case "AStock":
+                symbol = item.quoteID.hasPrefix("1.") ? "\(item.code).SS" : "\(item.code).SZ"
+                market = item.securityTypeName ?? (item.quoteID.hasPrefix("1.") ? "沪A" : "深A")
+            case "HK":
+                symbol = "\(item.code).HK"
+                market = item.securityTypeName ?? "港股"
+            case "UsStock":
+                symbol = item.code.uppercased()
+                market = item.securityTypeName ?? "美股"
+            default:
+                return nil
+            }
+            guard (try? StockSymbolParser.parse(symbol)) != nil, seen.insert(symbol).inserted else { return nil }
+            return StockSearchResult(symbol: symbol, name: item.name, market: market)
+        }
+    }
+
+    private struct Response: Decodable {
+        let table: Table
+
+        private enum CodingKeys: String, CodingKey {
+            case table = "QuotationCodeTable"
+        }
+    }
+
+    private struct Table: Decodable {
+        let data: [Item]?
+
+        private enum CodingKeys: String, CodingKey {
+            case data = "Data"
+        }
+    }
+
+    private struct Item: Decodable {
+        let code: String
+        let name: String
+        let classify: String
+        let quoteID: String
+        let securityTypeName: String?
+
+        private enum CodingKeys: String, CodingKey {
+            case code = "Code"
+            case name = "Name"
+            case classify = "Classify"
+            case quoteID = "QuoteID"
+            case securityTypeName = "SecurityTypeName"
         }
     }
 }
@@ -501,22 +627,32 @@ final class StockStore: ObservableObject {
     @Published var errorMessage = ""
     @Published private(set) var colorTheme: StockColorTheme
     @Published private(set) var dataSource: StockDataSource
+    @Published private(set) var chartPoints: [StockPoint] = []
+    @Published private(set) var chartPeriod: StockChartPeriod = .daily
+    @Published private(set) var isLoadingChart = false
+    @Published private(set) var chartErrorMessage = ""
 
     typealias QuoteFetcher = (StockSymbol) async throws -> StockSnapshot
+    typealias ChartFetcher = (StockSymbol, StockChartPeriod, StockDataSource) async throws -> [StockPoint]
 
     private let customFetcher: QuoteFetcher?
+    private let customChartFetcher: ChartFetcher?
     private let defaults: UserDefaults
     private let defaultsKey = "luma.stock.query-records.v1"
     private let colorThemeKey = "luma.stock.color-theme.v1"
     private let dataSourceKey = "luma.stock.data-source.v1"
+    private var chartCache: [String: [StockChartPeriod: [StockPoint]]] = [:]
+    private var chartRequestID: UUID?
 
     init(
         records preloadedRecords: [StockSnapshot]? = nil,
         defaults: UserDefaults = .standard,
-        fetcher: QuoteFetcher? = nil
+        fetcher: QuoteFetcher? = nil,
+        chartFetcher: ChartFetcher? = nil
     ) {
         self.defaults = defaults
         customFetcher = fetcher
+        customChartFetcher = chartFetcher
         colorTheme = StockColorTheme(rawValue: defaults.string(forKey: colorThemeKey) ?? "")
             ?? .greenUpRedDown
         dataSource = StockDataSource(rawValue: defaults.string(forKey: dataSourceKey) ?? "")
@@ -555,6 +691,7 @@ final class StockStore: ObservableObject {
 
     func refreshSelected() async {
         guard let selected else { return }
+        invalidateChart(for: selected.symbol)
         await query(selected.symbol)
     }
 
@@ -572,6 +709,7 @@ final class StockStore: ObservableObject {
                 let snapshot = try await fetch(symbol)
                 if let index = records.firstIndex(where: { $0.symbol == snapshot.symbol }) {
                     records[index] = snapshot
+                    invalidateChart(for: snapshot.symbol)
                 }
             } catch {
                 failures += 1
@@ -592,21 +730,68 @@ final class StockStore: ObservableObject {
     func setDataSource(_ source: StockDataSource) {
         guard dataSource != source else { return }
         dataSource = source
+        chartCache.removeAll()
+        chartPoints = []
+        chartErrorMessage = ""
         defaults.set(source.rawValue, forKey: dataSourceKey)
     }
 
     func select(_ snapshot: StockSnapshot) {
         guard records.contains(where: { $0.symbol == snapshot.symbol }) else { return }
         selectedSymbol = snapshot.symbol
+        chartPoints = []
+        chartErrorMessage = ""
     }
 
     func remove(_ snapshot: StockSnapshot) {
         records.removeAll { $0.symbol == snapshot.symbol }
+        invalidateChart(for: snapshot.symbol)
         if selectedSymbol == snapshot.symbol { selectedSymbol = records.first?.symbol }
         save()
     }
 
+    func loadChart(for snapshot: StockSnapshot, period: StockChartPeriod, force: Bool = false) async {
+        if chartPeriod != period { chartPoints = [] }
+        chartPeriod = period
+        chartErrorMessage = ""
+        let source = dataSource
+        let cacheKey = "\(source.rawValue):\(snapshot.symbol)"
+        if !force, let cached = chartCache[cacheKey]?[period] {
+            chartPoints = cached
+            return
+        }
+
+        let requestID = UUID()
+        chartRequestID = requestID
+        isLoadingChart = true
+        defer {
+            if chartRequestID == requestID { isLoadingChart = false }
+        }
+
+        do {
+            let symbol = try StockSymbolParser.parse(snapshot.symbol)
+            let points: [StockPoint]
+            if let customChartFetcher {
+                points = try await customChartFetcher(symbol, period, source)
+            } else {
+                points = try await StockChartService().fetch(symbol: symbol, period: period, source: source)
+            }
+            var periods = chartCache[cacheKey] ?? [:]
+            periods[period] = points
+            chartCache[cacheKey] = periods
+            guard chartRequestID == requestID,
+                  selectedSymbol == snapshot.symbol,
+                  chartPeriod == period else { return }
+            chartPoints = points
+        } catch {
+            guard chartRequestID == requestID else { return }
+            chartPoints = []
+            chartErrorMessage = error.localizedDescription
+        }
+    }
+
     private func upsert(_ snapshot: StockSnapshot) {
+        invalidateChart(for: snapshot.symbol)
         records.removeAll { $0.symbol == snapshot.symbol }
         records.insert(snapshot, at: 0)
         if records.count > 20 { records.removeLast(records.count - 20) }
@@ -626,6 +811,11 @@ final class StockStore: ObservableObject {
     private func save() {
         guard let data = try? JSONEncoder().encode(records) else { return }
         defaults.set(data, forKey: defaultsKey)
+    }
+
+    private func invalidateChart(for symbol: String) {
+        chartCache.keys.filter { $0.hasSuffix(":\(symbol)") }.forEach { chartCache.removeValue(forKey: $0) }
+        if selectedSymbol == symbol { chartPoints = [] }
     }
 }
 

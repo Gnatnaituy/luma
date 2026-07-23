@@ -3,6 +3,12 @@ import SwiftUI
 
 struct JSONSyntaxEditor: NSViewRepresentable {
     @Binding var text: String
+    let autofocus: Bool
+
+    init(text: Binding<String>, autofocus: Bool = false) {
+        _text = text
+        self.autofocus = autofocus
+    }
 
     func makeCoordinator() -> Coordinator {
         Coordinator(parent: self)
@@ -31,11 +37,13 @@ struct JSONSyntaxEditor: NSViewRepresentable {
         textView.string = text
         scrollView.documentView = textView
         context.coordinator.applyHighlighting(to: textView)
+        context.coordinator.focusIfNeeded(scrollView, autofocus: autofocus)
         return scrollView
     }
 
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
         context.coordinator.parent = self
+        context.coordinator.focusIfNeeded(scrollView, autofocus: autofocus)
         guard let textView = scrollView.documentView as? NSTextView else { return }
         if textView.string != text {
             context.coordinator.isUpdating = true
@@ -48,6 +56,7 @@ struct JSONSyntaxEditor: NSViewRepresentable {
     final class Coordinator: NSObject, NSTextViewDelegate {
         var parent: JSONSyntaxEditor
         var isUpdating = false
+        private var didAutofocus = false
 
         init(parent: JSONSyntaxEditor) {
             self.parent = parent
@@ -57,6 +66,19 @@ struct JSONSyntaxEditor: NSViewRepresentable {
             guard !isUpdating, let textView = notification.object as? NSTextView else { return }
             parent.text = textView.string
             applyHighlighting(to: textView)
+        }
+
+        func focusIfNeeded(_ scrollView: NSScrollView, autofocus: Bool) {
+            guard autofocus, !didAutofocus else { return }
+            DispatchQueue.main.async { [weak self, weak scrollView] in
+                guard let self,
+                      !self.didAutofocus,
+                      let scrollView,
+                      let textView = scrollView.documentView as? NSTextView,
+                      let window = textView.window else { return }
+                window.makeFirstResponder(textView)
+                self.didAutofocus = true
+            }
         }
 
         func applyHighlighting(to textView: NSTextView) {

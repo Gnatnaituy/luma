@@ -1,30 +1,38 @@
 import AppKit
 
+enum LauncherWindowHeightContext: Hashable {
+    case search
+    case results
+    case settings
+    case plugin(String)
+}
+
 struct LauncherWindowPlacement {
     // Captured from the user's chosen position on a 1920 x 1255 visible frame.
     private static let defaultHorizontalRatio: CGFloat = 567.0 / 1920.0
     private static let defaultTopRatio: CGFloat = 1034.0 / 1255.0
 
     private(set) var rememberedTopLeft: NSPoint?
-    private(set) var rememberedHeight: CGFloat?
+    private(set) var rememberedHeights: [LauncherWindowHeightContext: CGFloat] = [:]
 
     mutating func remember(frame: NSRect) {
         rememberedTopLeft = NSPoint(x: frame.minX, y: frame.maxY)
     }
 
-    mutating func rememberHeight(_ height: CGFloat) {
+    mutating func rememberHeight(_ height: CGFloat, for context: LauncherWindowHeightContext) {
         guard height.isFinite, height > 0 else { return }
-        rememberedHeight = height
+        rememberedHeights[context] = height
     }
 
     func frame(
         width: CGFloat,
         height: CGFloat,
+        heightContext: LauncherWindowHeightContext,
         minimumHeight: CGFloat = 0,
         visibleFrame: NSRect
     ) -> NSRect {
         let resolvedHeight = min(
-            max(rememberedHeight ?? height, minimumHeight),
+            max(rememberedHeights[heightContext] ?? height, minimumHeight),
             visibleFrame.height
         )
         let proposedDefaultTopLeft = NSPoint(

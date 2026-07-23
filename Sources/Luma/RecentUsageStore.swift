@@ -62,7 +62,7 @@ final class RecentUsageStore: ObservableObject {
 
     private let defaults: UserDefaults
     private let storageKey = "Luma.recentUsage.v1"
-    private let maximumItemCount = 12
+    private let maximumItemCountPerKind = 15
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
@@ -85,7 +85,13 @@ final class RecentUsageStore: ObservableObject {
     private func record(_ item: RecentUsageItem) {
         var updated = items.filter { $0.id != item.id }
         updated.insert(item, at: 0)
-        items = Array(updated.prefix(maximumItemCount))
+        var counts: [RecentUsageKind: Int] = [:]
+        items = updated.filter { candidate in
+            let count = counts[candidate.kind, default: 0]
+            guard count < maximumItemCountPerKind else { return false }
+            counts[candidate.kind] = count + 1
+            return true
+        }
         if let data = try? JSONEncoder().encode(items) {
             defaults.set(data, forKey: storageKey)
         }

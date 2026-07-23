@@ -8,6 +8,7 @@ enum Plugin: String, CaseIterable, Identifiable {
     case translate
     case code
     case stocks
+    case weather
 
     var id: String { rawValue }
 
@@ -20,6 +21,7 @@ enum Plugin: String, CaseIterable, Identifiable {
         case .translate: "翻译"
         case .code: "编码小助手"
         case .stocks: "股票盯盘"
+        case .weather: "天气"
         }
     }
 
@@ -32,6 +34,7 @@ enum Plugin: String, CaseIterable, Identifiable {
         case .translate: "支持 Apple 系统翻译与自定义 AI 模型"
         case .code: "Base64、URL 编码与 SHA-256"
         case .stocks: "按代码查询公网延迟行情"
+        case .weather: "添加地点并查看逐小时与七日预报"
         }
     }
 
@@ -44,6 +47,7 @@ enum Plugin: String, CaseIterable, Identifiable {
         case .translate: "character.book.closed"
         case .code: "chevron.left.forwardslash.chevron.right"
         case .stocks: "chart.xyaxis.line"
+        case .weather: "cloud.sun.fill"
         }
     }
 
@@ -56,6 +60,7 @@ enum Plugin: String, CaseIterable, Identifiable {
         case .translate: .teal
         case .code: .cyan
         case .stocks: .orange
+        case .weather: .blue
         }
     }
 
@@ -68,6 +73,7 @@ enum Plugin: String, CaseIterable, Identifiable {
         case .translate: ["translate", "fy", "翻译", "中英"]
         case .code: ["base64", "url", "sha256", "encode", "decode", "编码", "解码"]
         case .stocks: ["stock", "股票", "盯盘", "行情"]
+        case .weather: ["weather", "天气", "气温", "预报", "城市"]
         }
     }
 

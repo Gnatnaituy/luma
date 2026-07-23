@@ -9,6 +9,9 @@ enum LauncherPresentation: Equatable {
 }
 
 final class LauncherModel: ObservableObject {
+    static let defaultExpandedWindowHeight: CGFloat = 666
+    static let horizontalRecentWindowHeight: CGFloat = 270
+
     @Published var query = "" {
         didSet {
             guard query != oldValue else { return }
@@ -76,14 +79,8 @@ final class LauncherModel: ObservableObject {
         installedApps.search(query)
     }
 
-    var filteredClipboardEntries: [ClipboardEntry] {
-        let value = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !value.isEmpty else { return [] }
-        return Array(clipboard.entries.lazy.filter { $0.matchesSearch(value) }.prefix(50))
-    }
-
-    var recentItems: [RecentUsageItem] {
-        Array(recentUsage.items.lazy.filter { item in
+    private var availableRecentItems: [RecentUsageItem] {
+        recentUsage.items.filter { item in
             switch item.kind {
             case .plugin:
                 guard let plugin = item.plugin else { return false }
@@ -92,7 +89,15 @@ final class LauncherModel: ObservableObject {
                 guard let application = item.application else { return false }
                 return FileManager.default.fileExists(atPath: application.url.path)
             }
-        }.prefix(9))
+        }
+    }
+
+    var recentItems: [RecentUsageItem] {
+        Array(availableRecentItems.prefix(9))
+    }
+
+    func horizontalRecentItems(of kind: RecentUsageKind) -> [RecentUsageItem] {
+        Array(availableRecentItems.lazy.filter { $0.kind == kind }.prefix(15))
     }
 
     var presentation: LauncherPresentation {
@@ -102,12 +107,37 @@ final class LauncherModel: ObservableObject {
         return .search
     }
 
-    var preferredWindowHeight: CGFloat {
+    var windowHeightContext: LauncherWindowHeightContext {
         switch presentation {
         case .search:
-            recentItems.isEmpty ? 58 : CGFloat(96 + recentItems.count * 52)
-        case .results: 430
-        case .plugin, .settings: 600
+            return .search
+        case .results:
+            return .results
+        case .settings:
+            return .settings
+        case .plugin:
+            return .plugin(selectedPlugin?.rawValue ?? "unknown")
+        }
+    }
+
+    var preferredWindowHeight: CGFloat {
+        preferredWindowHeight(recentDisplayMode: .vertical)
+    }
+
+    func preferredWindowHeight(recentDisplayMode: RecentSearchDisplayMode) -> CGFloat {
+        switch presentation {
+        case .search:
+            if recentItems.isEmpty { return 58 }
+            switch recentDisplayMode {
+            case .horizontal:
+                return Self.horizontalRecentWindowHeight
+            case .vertical:
+                return CGFloat(96 + recentItems.count * 52)
+            }
+        case .results:
+            return 430
+        case .plugin, .settings:
+            return Self.defaultExpandedWindowHeight
         }
     }
 
@@ -126,7 +156,6 @@ final class LauncherModel: ObservableObject {
         guard !value.isEmpty,
               instantCalculation == nil,
               filteredApplications.isEmpty,
-              filteredClipboardEntries.isEmpty,
               filteredPlugins.count == 1,
               let plugin = filteredPlugins.first else { return false }
         openPlugin(plugin)
@@ -138,10 +167,6 @@ final class LauncherModel: ObservableObject {
     }
 
     func activateSelected() {
-        activateSelected(pasteClipboardEntry: nil)
-    }
-
-    func activateSelected(pasteClipboardEntry: ((ClipboardEntry) -> Void)?) {
         let calculation = instantCalculation
         if let calculation, selectedResult == 0 {
             clipboard.copy(calculation)
@@ -158,24 +183,12 @@ final class LauncherModel: ObservableObject {
         let applications = filteredApplications
         if applications.indices.contains(applicationIndex) {
             openApplication(applications[applicationIndex])
-            return
-        }
-        let clipboardIndex = applicationIndex - applications.count
-        let clipboardEntries = filteredClipboardEntries
-        if clipboardEntries.indices.contains(clipboardIndex) {
-            let entry = clipboardEntries[clipboardIndex]
-            if let pasteClipboardEntry {
-                pasteClipboardEntry(entry)
-            } else {
-                clipboard.copy(entry)
-            }
         }
     }
 
     func moveSelection(_ delta: Int) {
         let count = filteredPlugins.count
             + filteredApplications.count
-            + filteredClipboardEntries.count
             + (instantCalculation == nil ? 0 : 1)
         guard count > 0 else { selectedResult = 0; return }
         selectedResult = (selectedResult + delta + count) % count

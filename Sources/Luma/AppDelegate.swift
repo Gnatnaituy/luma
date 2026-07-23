@@ -7,6 +7,7 @@ import SwiftUI
 final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private let clipboard = ClipboardMonitor()
     private let stocks = StockStore()
+    private let weather = WeatherStore()
     private let applicationSettings = ApplicationSettings()
     private let shortcutSettings = ShortcutSettings()
     private let pluginSettings = PluginSettings()
@@ -34,6 +35,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var cancellables = Set<AnyCancellable>()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        configureApplicationIcon()
         NSApp.setActivationPolicy(.accessory)
         buildPanel()
         applicationSettings.applyHandler = { [weak self] isVisible in
@@ -67,6 +69,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         showPanel()
     }
 
+    private func configureApplicationIcon() {
+        guard
+            let iconURL = Bundle.main.url(forResource: "Luma", withExtension: "icns"),
+            let icon = NSImage(contentsOf: iconURL)
+        else { return }
+        icon.isTemplate = false
+        NSApp.applicationIconImage = icon
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
         clipboard.stop()
     }
@@ -76,6 +87,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             model: model,
             clipboard: clipboard,
             stocks: stocks,
+            weather: weather,
             applicationSettings: applicationSettings,
             shortcutSettings: shortcutSettings,
             pluginSettings: pluginSettings,
@@ -90,7 +102,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         )
 
         let panel = LauncherPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 920, height: model.preferredWindowHeight),
+            contentRect: NSRect(
+                x: 0,
+                y: 0,
+                width: 920,
+                height: model.preferredWindowHeight(
+                    recentDisplayMode: applicationSettings.recentSearchDisplayMode
+                )
+            ),
             styleMask: [.titled, .fullSizeContentView, .resizable],
             backing: .buffered,
             defer: false
@@ -168,7 +187,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             pasteTargetApplication = frontmostApplication
         }
         model.prepareForPresentation(query: initialQuery)
-        resizePanel(to: model.preferredWindowHeight, animated: false)
+        resizePanel(
+            to: model.preferredWindowHeight(
+                recentDisplayMode: applicationSettings.recentSearchDisplayMode
+            ),
+            animated: false
+        )
         NSApp.activate(ignoringOtherApps: true)
         panel.makeKeyAndOrderFront(nil)
     }
@@ -236,7 +260,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             .receive(on: RunLoop.main)
             .sink { [weak self] _, _, _ in
                 guard let self else { return }
-                self.resizePanel(to: self.model.preferredWindowHeight, animated: self.panel?.isVisible == true)
+                self.resizePanel(
+                    to: self.model.preferredWindowHeight(
+                        recentDisplayMode: self.applicationSettings.recentSearchDisplayMode
+                    ),
+                    animated: self.panel?.isVisible == true
+                )
+            }
+            .store(in: &cancellables)
+
+        applicationSettings.$recentSearchDisplayMode
+            .dropFirst()
+            .receive(on: RunLoop.main)
+            .sink { [weak self] mode in
+                guard let self else { return }
+                self.resizePanel(
+                    to: self.model.preferredWindowHeight(recentDisplayMode: mode),
+                    animated: self.panel?.isVisible == true
+                )
             }
             .store(in: &cancellables)
     }
@@ -250,6 +291,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let frame = windowPlacement.frame(
             width: width,
             height: height,
+            heightContext: model.windowHeightContext,
             minimumHeight: minimumHeight,
             visibleFrame: screen.visibleFrame
         )
@@ -344,19 +386,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     func windowWillStartLiveResize(_ notification: Notification) {
         guard let window = notification.object as? NSWindow, window === panel else { return }
-        isUserResizingPanel = true
+        isUserResizingPanel = NSEvent.pressedMouseButtons & 1 == 1
     }
 
     func windowDidResize(_ notification: Notification) {
         guard isUserResizingPanel,
               let window = notification.object as? NSWindow,
               window === panel else { return }
-        windowPlacement.rememberHeight(window.frame.height)
+        windowPlacement.rememberHeight(window.frame.height, for: model.windowHeightContext)
     }
 
     func windowDidEndLiveResize(_ notification: Notification) {
-        guard let window = notification.object as? NSWindow, window === panel else { return }
-        windowPlacement.rememberHeight(window.frame.height)
+        guard isUserResizingPanel,
+              let window = notification.object as? NSWindow,
+              window === panel else { return }
+        windowPlacement.rememberHeight(window.frame.height, for: model.windowHeightContext)
         isUserResizingPanel = false
     }
 }

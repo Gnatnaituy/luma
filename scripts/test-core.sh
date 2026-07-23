@@ -38,9 +38,11 @@ swiftc \
   "$PROJECT_DIR/Sources/Luma/SearchField.swift" \
   "$PROJECT_DIR/Sources/Luma/ShortcutSettings.swift" \
   "$PROJECT_DIR/Sources/Luma/StockService.swift" \
+  "$PROJECT_DIR/Sources/Luma/StockChartService.swift" \
   "$PROJECT_DIR/Sources/Luma/StockStyle.swift" \
   "$PROJECT_DIR/Sources/Luma/Toolbox.swift" \
   "$PROJECT_DIR/Sources/Luma/WindowPlacement.swift" \
+  "$PROJECT_DIR/Sources/Luma/WeatherService.swift" \
   "$PROJECT_DIR/Tests/CoreTests.swift" \
   -o "$BUILD_ROOT/CoreTests"
 
