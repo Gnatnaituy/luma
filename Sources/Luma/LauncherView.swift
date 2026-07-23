@@ -5,6 +5,7 @@ struct LauncherView: View {
     @ObservedObject var model: LauncherModel
     @ObservedObject var clipboard: ClipboardMonitor
     @ObservedObject var stocks: StockStore
+    @ObservedObject var weather: WeatherStore
     @ObservedObject var applicationSettings: ApplicationSettings
     @ObservedObject var shortcutSettings: ShortcutSettings
     @ObservedObject var pluginSettings: PluginSettings
@@ -12,6 +13,7 @@ struct LauncherView: View {
     @ObservedObject var translationSettings: TranslationSettings
     let pasteClipboardEntry: (ClipboardEntry) -> Void
     let dismiss: () -> Void
+    @State private var escapeMonitor: Any?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -28,6 +30,28 @@ struct LauncherView: View {
             RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .stroke(Color.primary.opacity(0.1), lineWidth: 1)
         }
+        .onAppear(perform: installEscapeMonitor)
+        .onDisappear(perform: removeEscapeMonitor)
+    }
+
+    private func installEscapeMonitor() {
+        guard escapeMonitor == nil else { return }
+        escapeMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            let commandModifiers: NSEvent.ModifierFlags = [.command, .control, .option, .shift]
+            guard event.keyCode == 53,
+                  event.modifierFlags.intersection(commandModifiers).isEmpty,
+                  LauncherKeyboardRouting.handlesEscape(for: model.presentation) else { return event }
+            DispatchQueue.main.async {
+                model.returnToSearch()
+            }
+            return nil
+        }
+    }
+
+    private func removeEscapeMonitor() {
+        guard let escapeMonitor else { return }
+        NSEvent.removeMonitor(escapeMonitor)
+        self.escapeMonitor = nil
     }
 
     private var header: some View {
@@ -44,18 +68,15 @@ struct LauncherView: View {
                     .resizable()
                     .interpolation(.high)
                     .scaledToFit()
-                    .frame(width: 30, height: 30)
-                    .scaleEffect(1.22)
-                    .shadow(color: Color.black.opacity(0.10), radius: 1, y: 0.5)
                     .frame(width: 32, height: 32)
-                    .clipped()
+                    .scaleEffect(1.25)
                     .accessibilityLabel("Luma")
             }
 
             LauncherSearchField(
                 text: $model.query,
                 focusRequest: model.focusRequest,
-                onSubmit: { model.activateSelected(pasteClipboardEntry: pasteClipboardEntry) },
+                onSubmit: model.activateSelected,
                 onMove: model.moveSelection,
                 onEscape: {
                     if !model.handleEscape() { dismiss() }
@@ -88,13 +109,14 @@ struct LauncherView: View {
     private var content: some View {
         switch model.presentation {
         case .results:
-            SearchResultsView(model: model, pasteClipboardEntry: pasteClipboardEntry)
+            SearchResultsView(model: model)
         case .plugin:
             if let plugin = model.selectedPlugin {
                 PluginDetailView(
                     plugin: plugin,
                     clipboard: clipboard,
                     stocks: stocks,
+                    weather: weather,
                     translationSettings: translationSettings,
                     pasteClipboardEntry: pasteClipboardEntry
                 )
@@ -105,20 +127,41 @@ struct LauncherView: View {
                 shortcuts: shortcutSettings,
                 plugins: pluginSettings,
                 stocks: stocks,
+                weather: weather,
                 clipboard: clipboard,
                 aiSettings: aiSettings,
                 translationSettings: translationSettings
             )
         case .search:
-            RecentItemsView(model: model)
+            RecentItemsView(
+                model: model,
+                displayMode: applicationSettings.recentSearchDisplayMode
+            )
         }
+    }
+}
+
+enum LauncherKeyboardRouting {
+    static func handlesEscape(for presentation: LauncherPresentation) -> Bool {
+        presentation == .plugin || presentation == .settings
     }
 }
 
 struct RecentItemsView: View {
     @ObservedObject var model: LauncherModel
+    let displayMode: RecentSearchDisplayMode
 
+    @ViewBuilder
     var body: some View {
+        switch displayMode {
+        case .vertical:
+            verticalContent
+        case .horizontal:
+            horizontalContent
+        }
+    }
+
+    private var verticalContent: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("最近使用")
                 .font(.caption.weight(.semibold))
@@ -139,6 +182,31 @@ struct RecentItemsView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
+    }
+
+    private var horizontalContent: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            RecentHorizontalSection(
+                title: "插件",
+                items: model.horizontalRecentItems(of: .plugin),
+                action: activate
+            )
+            RecentHorizontalSection(
+                title: "应用",
+                items: model.horizontalRecentItems(of: .application),
+                action: activate
+            )
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+    }
+
+    private func activate(_ item: RecentUsageItem) {
+        if let plugin = item.plugin {
+            model.openPlugin(plugin)
+        } else if let application = item.application {
+            model.openApplication(application)
+        }
     }
 }
 
@@ -188,9 +256,81 @@ private struct RecentItemRow: View {
     }
 }
 
+private struct RecentHorizontalSection: View {
+    let title: String
+    let items: [RecentUsageItem]
+    let action: (RecentUsageItem) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 4)
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                LazyHStack(spacing: 8) {
+                    if items.isEmpty {
+                        Text("暂无最近使用")
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
+                            .frame(height: 66)
+                    } else {
+                        ForEach(items) { item in
+                            RecentHorizontalItem(item: item) {
+                                action(item)
+                            }
+                        }
+                    }
+                }
+            }
+            .scrollClipDisabled()
+            .frame(height: 66)
+        }
+    }
+}
+
+private struct RecentHorizontalItem: View {
+    let item: RecentUsageItem
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 5) {
+                icon
+                Text(item.title)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+            .frame(width: 72, height: 66)
+            .contentShape(Rectangle())
+            .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 9))
+        }
+        .buttonStyle(.plain)
+        .help(item.title)
+    }
+
+    @ViewBuilder
+    private var icon: some View {
+        if let plugin = item.plugin {
+            Image(systemName: plugin.symbol)
+                .font(.system(size: 17, weight: .medium))
+                .foregroundStyle(plugin.tint)
+                .frame(width: 34, height: 34)
+                .background(plugin.tint.opacity(0.11), in: RoundedRectangle(cornerRadius: 8))
+        } else if let application = item.application {
+            Image(nsImage: NSWorkspace.shared.icon(forFile: application.url.path))
+                .resizable()
+                .scaledToFit()
+                .frame(width: 34, height: 34)
+        }
+    }
+}
+
 private struct SearchResultsView: View {
     @ObservedObject var model: LauncherModel
-    let pasteClipboardEntry: (ClipboardEntry) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -231,29 +371,13 @@ private struct SearchResultsView: View {
                         )
                     }
 
-                    ForEach(Array(model.filteredClipboardEntries.enumerated()), id: \.element.id) { index, entry in
-                        let calculationOffset = model.instantCalculation == nil ? 0 : 1
-                        let offset = calculationOffset
-                            + model.filteredPlugins.count
-                            + model.filteredApplications.count
-                        ResultRow(
-                            symbol: entry.kind.symbol,
-                            tint: clipboardTint(for: entry.kind),
-                            title: entry.searchDisplayTitle,
-                            subtitle: clipboardSubtitle(for: entry),
-                            isSelected: model.selectedResult == index + offset,
-                            action: { pasteClipboardEntry(entry) }
-                        )
-                    }
-
                     if model.filteredPlugins.isEmpty,
                        model.filteredApplications.isEmpty,
-                       model.filteredClipboardEntries.isEmpty,
                        model.instantCalculation == nil {
                         ContentUnavailableView(
                             "没有匹配的结果",
                             systemImage: "magnifyingglass",
-                            description: Text("可搜索插件、App、剪贴板内容或输入算式")
+                            description: Text("可搜索插件、App 或输入算式")
                         )
                         .padding(.top, 60)
                     }
@@ -263,19 +387,6 @@ private struct SearchResultsView: View {
         .padding(24)
     }
 
-    private func clipboardTint(for kind: ClipboardKind) -> Color {
-        switch kind {
-        case .text: .indigo
-        case .image: .pink
-        case .file: .orange
-        case .link: .blue
-        }
-    }
-
-    private func clipboardSubtitle(for entry: ClipboardEntry) -> String {
-        let favorite = entry.isFavorite ? " · 收藏" : ""
-        return "剪贴板 · \(entry.kind.title)\(favorite) · \(entry.copiedAt.formatted(.dateTime.hour().minute())) · 回车粘贴"
-    }
 }
 
 enum SettingsSection: String, CaseIterable, Identifiable {
@@ -286,6 +397,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
     case ai
     case translation
     case stocks
+    case weather
 
     var id: String { rawValue }
 
@@ -298,6 +410,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .ai: "AI 管理"
         case .translation: "翻译设置"
         case .stocks: "股票设置"
+        case .weather: "天气设置"
         }
     }
 
@@ -310,6 +423,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .ai: "管理供应商、API 协议、密钥与模型"
         case .translation: "选择系统翻译或指定 AI 模型"
         case .stocks: "设置行情涨跌颜色主题"
+        case .weather: "选择天气预报数据来源"
         }
     }
 
@@ -322,6 +436,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .ai: "brain.head.profile"
         case .translation: "character.bubble"
         case .stocks: "chart.line.uptrend.xyaxis"
+        case .weather: "cloud.sun"
         }
     }
 }
@@ -331,6 +446,7 @@ struct SettingsView: View {
     @ObservedObject var shortcuts: ShortcutSettings
     @ObservedObject var plugins: PluginSettings
     @ObservedObject var stocks: StockStore
+    @ObservedObject var weather: WeatherStore
     @ObservedObject var clipboard: ClipboardMonitor
     @ObservedObject var aiSettings: AISettings
     @ObservedObject var translationSettings: TranslationSettings
@@ -341,6 +457,7 @@ struct SettingsView: View {
         shortcuts: ShortcutSettings,
         plugins: PluginSettings,
         stocks: StockStore,
+        weather: WeatherStore,
         clipboard: ClipboardMonitor,
         aiSettings: AISettings,
         translationSettings: TranslationSettings,
@@ -350,6 +467,7 @@ struct SettingsView: View {
         self.shortcuts = shortcuts
         self.plugins = plugins
         self.stocks = stocks
+        self.weather = weather
         self.clipboard = clipboard
         self.aiSettings = aiSettings
         self.translationSettings = translationSettings
@@ -430,6 +548,8 @@ struct SettingsView: View {
                     TranslationSettingsView(settings: translationSettings, aiSettings: aiSettings)
                 case .stocks:
                     stockContent
+                case .weather:
+                    weatherContent
                 }
             }
             .padding(24)
@@ -439,31 +559,64 @@ struct SettingsView: View {
     }
 
     private var applicationContent: some View {
-        HStack(spacing: 14) {
-            Image(nsImage: LumaStatusIcon.image)
-                .renderingMode(.template)
-                .foregroundStyle(Color.primary)
-                .frame(width: 34, height: 34)
-                .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 8))
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(spacing: 14) {
+                Image(nsImage: LumaStatusIcon.image)
+                    .renderingMode(.template)
+                    .foregroundStyle(Color.primary)
+                    .frame(width: 34, height: 34)
+                    .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 8))
 
-            VStack(alignment: .leading, spacing: 4) {
-                Text("状态栏图标")
-                    .font(.headline)
-                Text("在 macOS 菜单栏显示 Luma，可快速打开或退出应用。")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("状态栏图标")
+                        .font(.headline)
+                    Text("在 macOS 菜单栏显示 Luma，可快速打开或退出应用。")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+
+                Toggle(
+                    "显示",
+                    isOn: Binding(
+                        get: { applicationSettings.showsStatusBarIcon },
+                        set: applicationSettings.setShowsStatusBarIcon
+                    )
+                )
+                .toggleStyle(LumaToggleStyle())
             }
 
-            Spacer()
+            Divider()
 
-            Toggle(
-                "显示",
-                isOn: Binding(
-                    get: { applicationSettings.showsStatusBarIcon },
-                    set: applicationSettings.setShowsStatusBarIcon
-                )
-            )
-            .toggleStyle(LumaToggleStyle())
+            HStack(spacing: 14) {
+                Image(systemName: "rectangle.grid.1x2")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(Color.primary)
+                    .frame(width: 34, height: 34)
+                    .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 8))
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("最近搜索展示")
+                        .font(.headline)
+                    Text("设置搜索首页中最近使用的插件与应用排列方式。")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+
+                HStack(spacing: 8) {
+                    ForEach(RecentSearchDisplayMode.allCases) { mode in
+                        LumaSelectionButton(
+                            title: mode.title,
+                            isSelected: applicationSettings.recentSearchDisplayMode == mode,
+                            action: { applicationSettings.setRecentSearchDisplayMode(mode) }
+                        )
+                        .frame(width: 90)
+                    }
+                }
+            }
         }
         .settingsCard()
     }
@@ -662,6 +815,38 @@ struct SettingsView: View {
             Text("颜色设置会同时应用到股票列表、涨跌幅和走势图。")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+        }
+        .settingsCard()
+    }
+
+    private var weatherContent: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            Text("天气数据源")
+                .font(.headline)
+
+            HStack(spacing: 8) {
+                ForEach(WeatherDataSource.allCases) { source in
+                    LumaSelectionButton(
+                        title: source.title,
+                        isSelected: weather.dataSource == source,
+                        action: { weather.setDataSource(source) }
+                    )
+                }
+            }
+
+            Text(weather.dataSource.subtitle + "。切换后请在天气插件中刷新已有地点。")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            Divider()
+
+            VStack(alignment: .leading, spacing: 8) {
+                Label("无需 API Key", systemImage: "checkmark.shield")
+                    .font(.subheadline.weight(.semibold))
+                Text("四个来源均无需密钥；按地点坐标或最近气象站查询，不会在后台自动轮询。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         }
         .settingsCard()
     }

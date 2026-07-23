@@ -21,6 +21,15 @@ enum CoreTests {
         let formatted = try JSONTool.format("{\"b\":2,\"a\":1}", pretty: true)
         try expect(formatted.contains("\n"), "pretty JSON")
         try expect(try JSONTool.format("\"Luma\"", pretty: false) == "\"Luma\"", "JSON fragments")
+        let stringToEscape = "He said \"你好\"\nLuma"
+        let escapedString = try JSONTool.escape(stringToEscape)
+        try expect(escapedString == "He said \\\"你好\\\"\\nLuma", "JSON string escape")
+        try expect(try JSONTool.unescape(escapedString) == stringToEscape, "JSON string unescape round trip")
+        try expect(try JSONTool.unescape("\"Luma\\n原生\"") == "Luma\n原生", "quoted JSON string unescape")
+
+        try expect(TranslationLanguageDetector.target(for: "你好，Luma") == .english, "Chinese input targets English")
+        try expect(TranslationLanguageDetector.target(for: "Hello, Luma") == .simplifiedChinese, "English input targets Chinese")
+        try expect(TranslationLanguageDetector.target(for: "  \n") == nil, "blank translation input keeps target")
 
         var highlightedJSON = "{\"name\":\"Luma\",\"native\":true,\"count\":7}"
         let editor = JSONSyntaxEditor(text: Binding(get: { highlightedJSON }, set: { highlightedJSON = $0 }))
@@ -55,6 +64,20 @@ enum CoreTests {
         try expect(try StockSymbolParser.parse("600115.SS").providerCode == "sh600115", "Shanghai stock symbol")
         try expect(try StockSymbolParser.parse("002594").canonical == "002594.SZ", "Shenzhen stock inference")
         try expect(try StockSymbolParser.parse("700.HK").canonical == "00700.HK", "Hong Kong stock padding")
+        let stockSearchFixture = Data("""
+        {"QuotationCodeTable":{"Data":[
+          {"Code":"600519","Name":"贵州茅台","Classify":"AStock","QuoteID":"1.600519","SecurityTypeName":"沪A"},
+          {"Code":"00700","Name":"腾讯控股","Classify":"HK","QuoteID":"116.00700","SecurityTypeName":"港股"},
+          {"Code":"AAPL","Name":"苹果","Classify":"UsStock","QuoteID":"105.AAPL","SecurityTypeName":"美股"},
+          {"Code":"BK0666","Name":"苹果概念","Classify":"BK","QuoteID":"90.BK0666","SecurityTypeName":"板块"}
+        ]}}
+        """.utf8)
+        let stockSuggestions = try EastMoneyStockSearchService.parse(data: stockSearchFixture)
+        try expect(
+            stockSuggestions.map(\.symbol) == ["600519.SS", "00700.HK", "AAPL"]
+                && stockSuggestions.map(\.name) == ["贵州茅台", "腾讯控股", "苹果"],
+            "stock name search maps supported markets and filters non-stock results"
+        )
 
         var quote = Array(repeating: "", count: 48)
         quote[1] = "中国东航"
@@ -81,12 +104,107 @@ enum CoreTests {
         let fixtureData = try JSONSerialization.data(withJSONObject: fixture)
         let stock = try TencentStockService.parse(data: fixtureData, symbol: StockSymbolParser.parse("600115.SS"))
         try expect(stock.name == "中国东航" && stock.points.count == 2, "stock response parsing")
+        try expect(abs(stock.amplitudePercent - 2.31) < 0.01, "stock daily amplitude calculation")
+        try expect(abs(stock.openChangePercent - 0.58) < 0.01, "stock opening change calculation")
+        try expect(abs((stock.dayPosition ?? 0) - 0.75) < 0.001, "stock intraday position calculation")
+        try expect(stock.periodHigh == 3.51 && stock.periodLow == 3.50, "stock period range calculation")
+        try expect(abs((stock.periodChangePercent ?? 0) - 0.2857) < 0.001, "stock period return calculation")
         let savedStock = try JSONDecoder().decode(StockSnapshot.self, from: JSONEncoder().encode(stock))
         try expect(savedStock == stock, "stock query record persistence")
         try expect(
             StockDataSource.allCases.map(\.title) == ["腾讯财经", "东方财富", "新浪财经"],
             "stock settings exposes three selectable data sources"
         )
+        try expect(
+            StockChartPeriod.allCases.map(\.title) == ["分时", "五日", "日K", "周K", "月K"],
+            "stock chart exposes all requested periods"
+        )
+        let denseChart = (0..<1_335).map { StockPoint(date: String($0), close: Double($0)) }
+        let sampledChart = StockChartSampler.downsample(denseChart, maximumCount: 360)
+        try expect(
+            sampledChart.count == 360
+                && sampledChart.first == denseChart.first
+                && sampledChart.last == denseChart.last,
+            "dense stock lines are downsampled while preserving endpoints"
+        )
+        try expect(StockTradingTimeline.ratio(for: "20260723 0915") == 0, "intraday timeline starts at 09:15")
+        try expect(StockTradingTimeline.ratio(for: "2026-07-23 15:30") == 1, "intraday timeline ends at 15:30")
+        try expect(
+            abs((StockTradingTimeline.ratio(for: "20260723 0930") ?? 0) - 0.04) < 0.0001,
+            "intraday points use fixed clock coordinates"
+        )
+        let tencentMinuteFixture: [String: Any] = [
+            "data": [
+                "sh600115": [
+                    "data": ["date": "20260722", "data": ["0930 3.50 10", "0931 3.52 20"]]
+                ]
+            ]
+        ]
+        let tencentMinuteData = try JSONSerialization.data(withJSONObject: tencentMinuteFixture)
+        let minutePoints = try TencentStockChartService.parseMinutes(
+            data: tencentMinuteData,
+            symbol: StockSymbolParser.parse("600115.SS"),
+            fiveDays: false
+        )
+        try expect(
+            minutePoints.map(\.close) == [3.50, 3.52] && minutePoints.last?.date == "20260722 0931",
+            "Tencent intraday chart parsing"
+        )
+        let tencentFiveDayFixture: [String: Any] = [
+            "data": [
+                "sh600115": [
+                    "data": [
+                        ["date": "20260722", "data": ["0930 3.52 10"]],
+                        ["date": "20260721", "data": ["0930 3.48 10"]]
+                    ]
+                ]
+            ]
+        ]
+        let tencentFiveDayData = try JSONSerialization.data(withJSONObject: tencentFiveDayFixture)
+        let fiveDayPoints = try TencentStockChartService.parseMinutes(
+            data: tencentFiveDayData,
+            symbol: StockSymbolParser.parse("600115.SS"),
+            fiveDays: true
+        )
+        try expect(
+            fiveDayPoints.first?.date == "20260721 0930" && fiveDayPoints.last?.date == "20260722 0930",
+            "Tencent five-day chart sorts trading days chronologically"
+        )
+        let tencentKFixture: [String: Any] = [
+            "data": [
+                "sh600115": [
+                    "qfqweek": [
+                        ["2026-07-17", "3.40", "3.50", "3.55", "3.38", "1000"],
+                        ["2026-07-22", "3.50", "3.59", "3.62", "3.48", "1200"]
+                    ]
+                ]
+            ]
+        ]
+        let tencentKData = try JSONSerialization.data(withJSONObject: tencentKFixture)
+        let weeklyPoints = try TencentStockChartService.parseKLine(
+            data: tencentKData,
+            symbol: StockSymbolParser.parse("600115.SS"),
+            period: .weekly
+        )
+        try expect(
+            weeklyPoints.count == 2 && weeklyPoints.last?.open == 3.50 && weeklyPoints.last?.high == 3.62,
+            "Tencent candlestick chart parsing"
+        )
+        let eastTrendData = Data("""
+        {"data":{"trends":["2026-07-22 09:30,0,3.50,3.50,3.50,10","2026-07-22 09:31,0,3.52,3.53,3.49,20"]}}
+        """.utf8)
+        let eastTrendPoints = try EastMoneyStockChartService.parseTrends(data: eastTrendData)
+        try expect(eastTrendPoints.map(\.close) == [3.50, 3.52], "East Money intraday chart parsing")
+        let eastKData = Data("""
+        {"data":{"klines":["2026-07-21,3.40,3.50,3.55,3.38,1000","2026-07-22,3.50,3.59,3.62,3.48,1200"]}}
+        """.utf8)
+        let eastKPoints = try EastMoneyStockChartService.parseKLine(data: eastKData)
+        try expect(eastKPoints.last?.low == 3.48 && eastKPoints.last?.volume == 1200, "East Money K-line parsing")
+        let sinaChartData = Data("""
+        {"result":{"status":{"code":0},"data":[{"day":"2026-07-22","open":"3.50","high":"3.62","low":"3.48","close":"3.59","volume":"1200"},{"day":"2026-07-23","open":"3.59","high":"3.66","low":"3.55","close":"3.63","volume":"1300"}]}}
+        """.utf8)
+        let sinaChartPoints = try SinaStockChartService.parse(data: sinaChartData)
+        try expect(sinaChartPoints.count == 2 && sinaChartPoints.last?.close == 3.63, "Sina K-line parsing")
         try expect(
             !LauncherPanelDismissalPolicy.shouldDismissOnResignKey(
                 isPresentingSheet: true,
@@ -168,6 +286,21 @@ enum CoreTests {
             points: [],
             fetchedAt: Date()
         )
+        var chartFetchCount = 0
+        let chartStore = StockStore(
+            records: [stock],
+            defaults: stockDefaults,
+            chartFetcher: { _, period, _ in
+                chartFetchCount += 1
+                return period == .intraday ? minutePoints : weeklyPoints
+            }
+        )
+        await chartStore.loadChart(for: stock, period: .intraday)
+        await chartStore.loadChart(for: stock, period: .intraday)
+        try expect(
+            chartFetchCount == 1 && chartStore.chartPoints == minutePoints,
+            "stock chart cache avoids duplicate period requests"
+        )
         var refreshedSymbols: [String] = []
         var queryLoadingStatesDuringRefresh: [Bool] = []
         var refreshingStockStore: StockStore!
@@ -220,6 +353,211 @@ enum CoreTests {
             )
         }
 
+        let locationFixture = Data("""
+        {"results":[
+          {"id":1796236,"name":"上海","latitude":31.22222,"longitude":121.45806,"timezone":"Asia/Shanghai","country":"中国","admin1":"上海市"},
+          {"id":745044,"name":"Springfield","latitude":39.80172,"longitude":-89.64371,"timezone":"America/Chicago","country":"美国","admin1":"Illinois"}
+        ]}
+        """.utf8)
+        let shanghai = try OpenMeteoWeatherService.parseLocation(data: locationFixture)
+        let locationSuggestions = try OpenMeteoWeatherService.parseLocations(data: locationFixture)
+        try expect(
+            shanghai.name == "上海"
+                && shanghai.subtitle == "上海市 · 中国"
+                && shanghai.timezone == "Asia/Shanghai"
+                && locationSuggestions.map(\.name) == ["上海", "Springfield"],
+            "weather geocoding response parses multiple suggestions"
+        )
+        let forecastFixture = Data("""
+        {
+          "current": {
+            "time": "2026-07-23T14:00", "temperature_2m": 33.2,
+            "relative_humidity_2m": 61, "apparent_temperature": 37.8,
+            "is_day": 1, "precipitation": 0.1, "weather_code": 2,
+            "wind_speed_10m": 13.4, "wind_direction_10m": 135
+          },
+          "hourly": {
+            "time": ["2026-07-23T13:00", "2026-07-23T14:00", "2026-07-23T15:00"],
+            "temperature_2m": [32.8, 33.2, 32.7],
+            "precipitation_probability": [10, 15, 20],
+            "weather_code": [1, 2, 61]
+          },
+          "daily": {
+            "time": ["2026-07-23", "2026-07-24"],
+            "weather_code": [2, 61],
+            "temperature_2m_max": [34.0, 31.0],
+            "temperature_2m_min": [27.0, 26.0],
+            "precipitation_probability_max": [20, 70],
+            "sunrise": ["2026-07-23T05:06", "2026-07-24T05:07"],
+            "sunset": ["2026-07-23T18:55", "2026-07-24T18:54"],
+            "wind_speed_10m_max": [18.0, 23.0]
+          }
+        }
+        """.utf8)
+        let weather = try OpenMeteoWeatherService.parseForecast(data: forecastFixture, location: shanghai)
+        try expect(
+            weather.current.temperature == 33.2
+                && weather.hourly.count == 2
+                && weather.hourly.first?.time == "2026-07-23T14:00"
+                && weather.daily.count == 2,
+            "weather current hourly and daily response parsing"
+        )
+        try expect(WeatherCondition.title(for: 95) == "雷雨", "weather condition mapping")
+        try expect(WeatherCondition.windDirection(135) == "东南", "weather wind direction mapping")
+        try expect(
+            try JSONDecoder().decode(WeatherSnapshot.self, from: JSONEncoder().encode(weather)) == weather,
+            "weather snapshot persistence round trip"
+        )
+        let metNorwayFixture = Data("""
+        {"properties":{"timeseries":[
+          {"time":"2026-07-23T02:00:00Z","data":{
+            "instant":{"details":{"air_temperature":32.2,"relative_humidity":72.8,"wind_from_direction":194.3,"wind_speed":3.0}},
+            "next_1_hours":{"summary":{"symbol_code":"partlycloudy_day"},"details":{"precipitation_amount":0.1,"probability_of_precipitation":20.0}}
+          }},
+          {"time":"2026-07-23T03:00:00Z","data":{
+            "instant":{"details":{"air_temperature":33.0,"relative_humidity":68.0,"wind_from_direction":190.0,"wind_speed":4.0}},
+            "next_1_hours":{"summary":{"symbol_code":"rainshowers_day"},"details":{"precipitation_amount":0.8,"probability_of_precipitation":70.0}}
+          }},
+          {"time":"2026-07-23T16:00:00Z","data":{
+            "instant":{"details":{"air_temperature":27.0,"relative_humidity":85.0,"wind_from_direction":160.0,"wind_speed":2.0}},
+            "next_1_hours":{"summary":{"symbol_code":"clearsky_night"},"details":{"precipitation_amount":0.0,"probability_of_precipitation":0.0}}
+          }}
+        ]}}
+        """.utf8)
+        let metWeather = try METNorwayWeatherService.parse(data: metNorwayFixture, location: shanghai)
+        try expect(
+            metWeather.current.temperature == 32.2
+                && abs(metWeather.current.windSpeed - 10.8) < 0.001
+                && metWeather.hourly.map(\.weatherCode) == [2, 80, 0]
+                && metWeather.daily.count == 2,
+            "MET Norway response converts UTC, units and symbols into Luma weather models"
+        )
+        try expect(
+            METNorwayWeatherService.weatherCode(for: "heavyrainandthunder_day") == 95
+                && METNorwayWeatherService.weatherCode(for: "snowshowers_night") == 85,
+            "MET Norway symbols map to WMO weather codes"
+        )
+        let cmaFixture = Data("""
+        {"code":0,"data":{
+          "daily":[
+            {"date":"2026/07/23","high":36.0,"low":28.0,"dayCode":2},
+            {"date":"2026/07/24","high":35.0,"low":27.0,"dayCode":7}
+          ],
+          "now":{"precipitation":0.1,"temperature":33.0,"humidity":69.0,"windDirectionDegree":86.0,"windSpeed":1.1,"feelst":38.8},
+          "lastUpdate":"2026/07/23 10:00"
+        }}
+        """.utf8)
+        let cmaWeather = try CMAWeatherService.parse(data: cmaFixture, location: shanghai)
+        try expect(
+            cmaWeather.current.temperature == 33
+                && cmaWeather.current.apparentTemperature == 38.8
+                && cmaWeather.current.weatherCode == 3
+                && cmaWeather.hourly.isEmpty
+                && cmaWeather.daily.map(\.weatherCode) == [3, 61]
+                && cmaWeather.daily.allSatisfy { $0.precipitationProbability == nil },
+            "China Meteorological Administration response parsing"
+        )
+        let nmcFixture = Data("""
+        {"code":0,"data":{
+          "real":{
+            "publish_time":"2026-07-23 10:00",
+            "weather":{"temperature":33.0,"humidity":69.0,"rain":0.0,"img":"1","feelst":38.8},
+            "wind":{"degree":86.0,"speed":1.1},
+            "sunriseSunset":{"sunrise":"2026-07-23 05:05","sunset":"2026-07-23 18:56"}
+          },
+          "predict":{"detail":[
+            {"date":"2026-07-23","day":{"weather":{"img":"2","temperature":"36"}},"night":{"weather":{"img":"2","temperature":"28"}}},
+            {"date":"2026-07-24","day":{"weather":{"img":"7","temperature":"35"}},"night":{"weather":{"img":"1","temperature":"27"}}}
+          ]}
+        }}
+        """.utf8)
+        let nmcWeather = try NMCWeatherService.parse(data: nmcFixture, location: shanghai)
+        try expect(
+            nmcWeather.current.weatherCode == 2
+                && abs(nmcWeather.current.windSpeed - 3.96) < 0.001
+                && nmcWeather.hourly.isEmpty
+                && nmcWeather.daily.map(\.weatherCode) == [3, 61]
+                && nmcWeather.daily.first?.sunrise == "2026-07-23 05:05",
+            "National Meteorological Center response parsing"
+        )
+        try expect(
+            WeatherDataSource.allCases.map(\.title) == ["Open-Meteo", "MET Norway", "中国气象局", "中央气象台"]
+                && ChinaWeatherCodeMapper.wmoCode(4) == 95
+                && ChinaWeatherCodeMapper.wmoCode(8) == 63,
+            "weather settings exposes two global and two Chinese free data sources"
+        )
+
+        let weatherSuiteName = "app.luma.weather-tests." + UUID().uuidString
+        let weatherDefaults = UserDefaults(suiteName: weatherSuiteName)!
+        weatherDefaults.removePersistentDomain(forName: weatherSuiteName)
+        defer { weatherDefaults.removePersistentDomain(forName: weatherSuiteName) }
+        let weatherStore = WeatherStore(
+            defaults: weatherDefaults,
+            adder: { query in
+                try expect(query == "上海", "weather location query is trimmed")
+                return weather
+            }
+        )
+        await weatherStore.add("  上海  ")
+        weatherStore.setDataSource(.nationalMeteorologicalCenter)
+        try expect(
+            weatherStore.records == [weather] && weatherStore.selectedLocationID == weather.id,
+            "weather location add selects and persists the record"
+        )
+        let restoredWeatherStore = WeatherStore(defaults: weatherDefaults)
+        try expect(
+            restoredWeatherStore.records == [weather] && restoredWeatherStore.dataSource == .nationalMeteorologicalCenter,
+            "weather saved locations and selected data source restore after relaunch"
+        )
+
+        let secondLocation = WeatherLocation(
+            id: 1850147,
+            name: "东京",
+            admin1: "东京都",
+            country: "日本",
+            latitude: 35.6895,
+            longitude: 139.6917,
+            timezone: "Asia/Tokyo"
+        )
+        let tokyoWeather = WeatherSnapshot(
+            location: secondLocation,
+            current: weather.current,
+            hourly: weather.hourly,
+            daily: weather.daily,
+            fetchedAt: weather.fetchedAt
+        )
+        var refreshedWeatherIDs: [Int] = []
+        let refreshingWeatherStore = WeatherStore(
+            records: [weather, tokyoWeather],
+            defaults: weatherDefaults,
+            fetcher: { location in
+                refreshedWeatherIDs.append(location.id)
+                return WeatherSnapshot(
+                    location: location,
+                    current: CurrentWeather(
+                        time: weather.current.time,
+                        temperature: weather.current.temperature + 1,
+                        apparentTemperature: weather.current.apparentTemperature,
+                        humidity: weather.current.humidity,
+                        precipitation: weather.current.precipitation,
+                        weatherCode: weather.current.weatherCode,
+                        windSpeed: weather.current.windSpeed,
+                        windDirection: weather.current.windDirection,
+                        isDay: weather.current.isDay
+                    ),
+                    hourly: weather.hourly,
+                    daily: weather.daily,
+                    fetchedAt: Date()
+                )
+            }
+        )
+        await refreshingWeatherStore.refreshAll()
+        try expect(
+            refreshedWeatherIDs == [weather.id, tokyoWeather.id]
+                && refreshingWeatherStore.records.allSatisfy { $0.current.temperature == 34.2 },
+            "refresh all weather locations updates every saved location"
+        )
+
         let linkEntry = ClipboardEntry(payload: .link(URL(string: "https://example.com")!))
         try expect(linkEntry.kind == .link && linkEntry.title == "https://example.com", "clipboard link classification")
         let fileEntry = ClipboardEntry(payload: .files([URL(fileURLWithPath: "/tmp/Luma.png")]))
@@ -237,6 +575,27 @@ enum CoreTests {
             ClipboardPasteShortcut.keyCode == CGKeyCode(kVK_ANSI_V)
                 && ClipboardPasteShortcut.eventFlags == .maskCommand,
             "clipboard double-click emits Command-V to the previous application"
+        )
+        try expect(
+            ClipboardKeyboardNavigation.movedSelection(
+                current: plainEntry.id,
+                entries: [plainEntry, linkEntry],
+                delta: 1
+            ) == linkEntry.id,
+            "clipboard down arrow selects the next entry"
+        )
+        try expect(
+            ClipboardKeyboardNavigation.movedSelection(
+                current: linkEntry.id,
+                entries: [plainEntry, linkEntry],
+                delta: 1
+            ) == plainEntry.id,
+            "clipboard selection wraps after the last entry"
+        )
+        try expect(
+            ClipboardKeyboardNavigation.movedFilter(current: .all, delta: -1) == .link
+                && ClipboardKeyboardNavigation.movedFilter(current: .all, delta: 1) == .favorites,
+            "clipboard left and right arrows switch filters"
         )
 
         _ = NSApplication.shared
@@ -278,7 +637,7 @@ enum CoreTests {
             "translation editor exposes only the SwiftUI outer border"
         )
         try expect(
-            SettingsSection.allCases.map(\.title) == ["应用设置", "快捷键管理", "插件关键词管理", "剪贴板设置", "AI 管理", "翻译设置", "股票设置"],
+            SettingsSection.allCases.map(\.title) == ["应用设置", "快捷键管理", "插件关键词管理", "剪贴板设置", "AI 管理", "翻译设置", "股票设置", "天气设置"],
             "application settings leads the settings navigation"
         )
         let applicationSuiteName = "app.luma.application-tests." + UUID().uuidString
@@ -289,12 +648,21 @@ enum CoreTests {
         var appliedStatusBarVisibility: Bool?
         applicationSettings.applyHandler = { appliedStatusBarVisibility = $0 }
         applicationSettings.setShowsStatusBarIcon(false)
+        try expect(
+            applicationSettings.recentSearchDisplayMode == .vertical,
+            "recent search display defaults to the existing vertical layout"
+        )
+        applicationSettings.setRecentSearchDisplayMode(.horizontal)
         let restoredApplicationSettings = ApplicationSettings(defaults: applicationDefaults)
         try expect(
             !applicationSettings.showsStatusBarIcon
                 && !restoredApplicationSettings.showsStatusBarIcon
                 && appliedStatusBarVisibility == false,
             "status bar icon visibility defaults on, applies immediately, and persists"
+        )
+        try expect(
+            restoredApplicationSettings.recentSearchDisplayMode == .horizontal,
+            "recent search display mode persists"
         )
         try expect(
             LumaStatusIcon.image.isTemplate && LumaStatusIcon.image.size == NSSize(width: 18, height: 18),
@@ -432,6 +800,11 @@ enum CoreTests {
         try expect(navigationModel.presentation == .results && navigationModel.preferredWindowHeight == 430, "launcher expands for results")
         navigationModel.activateSelected()
         try expect(navigationModel.presentation == .plugin && navigationModel.selectedPlugin == .json, "search opens a single tool")
+        try expect(
+            navigationModel.preferredWindowHeight == LauncherModel.defaultExpandedWindowHeight
+                && LauncherModel.defaultExpandedWindowHeight == 666,
+            "plugin and settings pages use the captured default panel height"
+        )
         try expect(recentUsage.items.first?.plugin == .json, "opening a plugin records it as recently used")
         navigationModel.returnToSearch()
         try expect(
@@ -456,14 +829,61 @@ enum CoreTests {
                 && navigationModel.preferredWindowHeight == CGFloat(96 + 9 * 52),
             "search page shows at most nine recent items and fits them without scrolling"
         )
+        for index in 10..<20 {
+            let recentAppURL = appFixtureRoot
+                .appendingPathComponent("RecentApp\(index).app", isDirectory: true)
+            try FileManager.default.createDirectory(at: recentAppURL, withIntermediateDirectories: true)
+            recentUsage.record(
+                application: InstalledApplication(
+                    url: recentAppURL,
+                    name: "Recent App \(index)",
+                    bundleIdentifier: "app.luma.recent.\(index)"
+                )
+            )
+        }
+        try expect(
+            navigationModel.horizontalRecentItems(of: .application).count == 15
+                && navigationModel.recentItems.count == 9,
+            "horizontal applications use their own 15-item limit without changing the vertical 9-item limit"
+        )
+        for plugin in Plugin.allCases {
+            recentUsage.record(plugin: plugin)
+        }
+        try expect(
+            navigationModel.horizontalRecentItems(of: .plugin).count == min(15, Plugin.allCases.count)
+                && navigationModel.horizontalRecentItems(of: .application).count == 15
+                && navigationModel.recentItems.count == 9,
+            "horizontal plugins and applications keep independent limits"
+        )
         let recentHosting = NSHostingView(
-            rootView: RecentItemsView(model: navigationModel)
+            rootView: RecentItemsView(model: navigationModel, displayMode: .vertical)
                 .frame(width: 920, height: navigationModel.preferredWindowHeight - 58)
         )
         recentHosting.layoutSubtreeIfNeeded()
         try expect(!containsScrollView(in: recentHosting), "recent usage fits its content without a scroll container")
+        try expect(
+            navigationModel.preferredWindowHeight(recentDisplayMode: .horizontal)
+                == LauncherModel.horizontalRecentWindowHeight,
+            "horizontal recent usage uses a compact two-row panel height"
+        )
+        let horizontalRecentHosting = NSHostingView(
+            rootView: RecentItemsView(model: navigationModel, displayMode: .horizontal)
+                .frame(width: 920, height: LauncherModel.horizontalRecentWindowHeight - 58)
+        )
+        horizontalRecentHosting.layoutSubtreeIfNeeded()
+        try expect(
+            containsScrollView(in: horizontalRecentHosting),
+            "horizontal recent usage keeps plugin and application rows on one scrolling line"
+        )
         navigationModel.showSettings()
         try expect(navigationModel.presentation == .settings && navigationModel.selectedPlugin == nil, "settings is a secondary page")
+        try expect(
+            LauncherKeyboardRouting.handlesEscape(for: .settings)
+                && LauncherKeyboardRouting.handlesEscape(for: .plugin)
+                && !LauncherKeyboardRouting.handlesEscape(for: .search)
+                && !LauncherKeyboardRouting.handlesEscape(for: .results),
+            "Escape returns from plugin and settings pages only"
+        )
         navigationModel.query = "password"
         try expect(navigationModel.presentation == .results && !navigationModel.isShowingSettings, "typing leaves settings for search")
 
@@ -541,21 +961,28 @@ enum CoreTests {
         )
         navigationModel.query = "quarterly searchable"
         try expect(
-            navigationModel.filteredClipboardEntries.map(\.id) == [searchableClipboardFile.id]
-                && navigationModel.filteredPlugins.isEmpty
-                && navigationModel.filteredApplications.isEmpty,
-            "launcher search matches multiple terms in clipboard file names and paths"
+            navigationModel.filteredPlugins.isEmpty && navigationModel.filteredApplications.isEmpty,
+            "launcher search excludes clipboard contents"
         )
-        var pastedClipboardEntry: ClipboardEntry?
-        navigationModel.activateSelected { pastedClipboardEntry = $0 }
+        navigationModel.activateSelected()
         try expect(
-            pastedClipboardEntry?.id == searchableClipboardFile.id,
-            "Enter pastes the selected clipboard search result"
+            navigationModel.selectedPlugin == nil,
+            "Enter does nothing when only clipboard content matches globally"
         )
-        navigationModel.query = "clipboard-searchable"
         try expect(
-            navigationModel.filteredClipboardEntries.map(\.id) == [searchableClipboardLink.id],
-            "launcher search matches clipboard link contents"
+            navigationClipboard.filteredEntries(.all, matching: "quarterly searchable").map(\.id)
+                == [searchableClipboardFile.id],
+            "clipboard plugin searches multiple terms in file names and paths"
+        )
+        try expect(
+            navigationClipboard.filteredEntries(.link, matching: "clipboard-searchable").map(\.id)
+                == [searchableClipboardLink.id],
+            "clipboard plugin searches link contents within the selected type"
+        )
+        try expect(
+            navigationClipboard.filteredEntries(.text, matching: "invoice 42").map(\.id)
+                == [searchableClipboardText.id],
+            "clipboard plugin searches text contents within the selected type"
         )
         try expect(
             recentUsage.items.first?.application?.url.resolvingSymlinksInPath().path
@@ -575,6 +1002,7 @@ enum CoreTests {
         let capturedDefaultFrame = windowPlacement.frame(
             width: 920,
             height: 58,
+            heightContext: .search,
             visibleFrame: capturedScreenVisibleFrame
         )
         try expect(
@@ -582,7 +1010,12 @@ enum CoreTests {
                 && abs(capturedDefaultFrame.maxY - 1034) < 1,
             "launcher defaults to the user-selected current position"
         )
-        let defaultWindowFrame = windowPlacement.frame(width: 920, height: 58, visibleFrame: visibleFrame)
+        let defaultWindowFrame = windowPlacement.frame(
+            width: 920,
+            height: 58,
+            heightContext: .search,
+            visibleFrame: visibleFrame
+        )
         try expect(
             visibleFrame.contains(defaultWindowFrame) && defaultWindowFrame.maxY > visibleFrame.midY,
             "responsive default launcher position stays visible and above center"
@@ -603,22 +1036,61 @@ enum CoreTests {
         )
         let draggedFrame = NSRect(x: 86, y: 620, width: 920, height: 58)
         windowPlacement.remember(frame: draggedFrame)
-        let expandedAtDraggedPosition = windowPlacement.frame(width: 920, height: 600, visibleFrame: visibleFrame)
+        let expandedAtDraggedPosition = windowPlacement.frame(
+            width: 920,
+            height: 600,
+            heightContext: .settings,
+            visibleFrame: visibleFrame
+        )
         try expect(
             expandedAtDraggedPosition.minX == draggedFrame.minX
                 && expandedAtDraggedPosition.maxY == draggedFrame.maxY,
             "runtime window position keeps its top-left anchor while expanding"
         )
         let userResizedFrame = NSRect(x: 86, y: 300, width: 920, height: 420)
-        windowPlacement.rememberHeight(userResizedFrame.height)
-        let reopenedAtRememberedHeight = windowPlacement.frame(width: 920, height: 58, visibleFrame: visibleFrame)
+        windowPlacement.rememberHeight(userResizedFrame.height, for: .plugin(Plugin.json.rawValue))
+        let reopenedAtRememberedHeight = windowPlacement.frame(
+            width: 920,
+            height: 58,
+            heightContext: .plugin(Plugin.json.rawValue),
+            visibleFrame: visibleFrame
+        )
         try expect(
             reopenedAtRememberedHeight.height == userResizedFrame.height,
-            "launcher remembers the user-adjusted height during the current run"
+            "launcher remembers the user-adjusted plugin height during the current run"
+        )
+        let independentSettingsFrame = windowPlacement.frame(
+            width: 920,
+            height: LauncherModel.defaultExpandedWindowHeight,
+            heightContext: .settings,
+            visibleFrame: visibleFrame
+        )
+        let independentOtherPluginFrame = windowPlacement.frame(
+            width: 920,
+            height: LauncherModel.defaultExpandedWindowHeight,
+            heightContext: .plugin(Plugin.translate.rawValue),
+            visibleFrame: visibleFrame
+        )
+        let independentSearchFrame = windowPlacement.frame(
+            width: 920,
+            height: defaultWindowFrame.height,
+            heightContext: .search,
+            visibleFrame: visibleFrame
+        )
+        try expect(
+            independentSettingsFrame.height == LauncherModel.defaultExpandedWindowHeight
+                && independentOtherPluginFrame.height == LauncherModel.defaultExpandedWindowHeight
+                && independentSearchFrame.height == defaultWindowFrame.height,
+            "search, settings, and every plugin keep independent runtime heights"
         )
         let placementAfterRelaunch = LauncherWindowPlacement()
         try expect(
-            placementAfterRelaunch.frame(width: 920, height: 58, visibleFrame: visibleFrame) == defaultWindowFrame,
+            placementAfterRelaunch.frame(
+                width: 920,
+                height: 58,
+                heightContext: .search,
+                visibleFrame: visibleFrame
+            ) == defaultWindowFrame,
             "window position resets after relaunch"
         )
 

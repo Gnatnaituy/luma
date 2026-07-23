@@ -186,6 +186,13 @@ final class ClipboardMonitor: ObservableObject {
         }
     }
 
+    func filteredEntries(_ filter: ClipboardFilter, matching query: String) -> [ClipboardEntry] {
+        let filtered = filteredEntries(filter)
+        let value = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !value.isEmpty else { return filtered }
+        return filtered.filter { $0.matchesSearch(value) }
+    }
+
     func copy(_ text: String) {
         write(.text(text))
     }

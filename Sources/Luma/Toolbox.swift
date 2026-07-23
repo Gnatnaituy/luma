@@ -10,6 +10,56 @@ enum JSONTool {
         let output = try JSONSerialization.data(withJSONObject: object, options: options)
         return String(decoding: output, as: UTF8.self)
     }
+
+    static func escape(_ input: String) throws -> String {
+        let literal = String(decoding: try JSONEncoder().encode(input), as: UTF8.self)
+        guard literal.count >= 2 else { throw JSONToolError.invalidStringLiteral }
+        return String(literal.dropFirst().dropLast())
+    }
+
+    static func unescape(_ input: String) throws -> String {
+        let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        let literal: String
+        if trimmed.hasPrefix("\"") && trimmed.hasSuffix("\"") {
+            literal = trimmed
+        } else {
+            literal = "\"\(input)\""
+        }
+        return try JSONDecoder().decode(String.self, from: Data(literal.utf8))
+    }
+}
+
+private enum JSONToolError: LocalizedError {
+    case invalidStringLiteral
+
+    var errorDescription: String? { "无法生成 JSON 字符串" }
+}
+
+enum TranslationTarget: Equatable {
+    case simplifiedChinese
+    case english
+}
+
+enum TranslationLanguageDetector {
+    static func target(for input: String) -> TranslationTarget? {
+        let scalars = input.unicodeScalars
+        guard scalars.contains(where: { !CharacterSet.whitespacesAndNewlines.contains($0) }) else {
+            return nil
+        }
+        if scalars.contains(where: isChinese) { return .english }
+        if scalars.contains(where: { CharacterSet.letters.contains($0) }) { return .simplifiedChinese }
+        return nil
+    }
+
+    private static func isChinese(_ scalar: Unicode.Scalar) -> Bool {
+        switch scalar.value {
+        case 0x3400...0x4DBF, 0x4E00...0x9FFF, 0xF900...0xFAFF,
+             0x20000...0x2FA1F:
+            true
+        default:
+            false
+        }
+    }
 }
 
 enum PasswordTool {

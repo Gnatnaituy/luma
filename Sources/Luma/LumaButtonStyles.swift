@@ -71,7 +71,8 @@ struct LumaTextFieldStyle: TextFieldStyle {
     func _body(configuration: TextField<Self._Label>) -> some View {
         configuration
             .textFieldStyle(.plain)
-            .padding(.horizontal, 10)
+            .padding(.leading, 16)
+            .padding(.trailing, 10)
             .frame(minHeight: height)
             .background(
                 Color.primary.opacity(0.045),
@@ -144,6 +145,7 @@ struct LumaMenuPicker<Value: Hashable>: View {
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
+        .padding(.leading, 6)
         .frame(maxWidth: .infinity)
         .frame(height: 30)
         .background(

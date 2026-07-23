@@ -43,8 +43,20 @@ Luma 是一个完全使用 macOS 原生技术实现的轻量工具启动器：Sw
 cd /path/to/Luma
 chmod +x scripts/build-app.sh
 ./scripts/build-app.sh
-open dist/Luma.app
 ```
+
+单独构建会生成不被 LaunchServices 注册的 `dist/Luma.build`；请使用下方安装脚本运行应用。
+
+构建、完整替换 `/Applications/Luma.app` 并自动重启：
+
+```bash
+chmod +x scripts/install-app.sh
+./scripts/install-app.sh
+```
+
+日常开发推荐使用安装脚本，确保运行路径和辅助功能授权目标始终是
+`/Applications/Luma.app`。安装过程会先在 `/Applications` 中生成并验证暂存副本，
+替换失败时恢复上一版本。
 
 核心工具测试：
 
@@ -53,7 +65,7 @@ chmod +x scripts/test-core.sh
 ./scripts/test-core.sh
 ```
 
-脚本会用系统 Swift 编译器生成并临时签名 `dist/Luma.app`，不下载任何依赖。当前构建目标为 Apple Silicon 和 macOS 14.4+。在完整 Xcode 中也可以直接打开 `Package.swift` 运行。
+脚本会用系统 Swift 编译器生成并临时签名 `dist/Luma.build`，不下载任何依赖。当前构建目标为 Apple Silicon 和 macOS 14.4+。在完整 Xcode 中也可以直接打开 `Package.swift` 运行。
 
 ## 设计取舍
 
