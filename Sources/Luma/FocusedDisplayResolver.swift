@@ -4,9 +4,10 @@ import CoreGraphics
 enum FocusedDisplayResolver {
     static func screen(
         for application: NSRunningApplication,
+        focusedWindowBounds: CGRect? = nil,
         screens: [NSScreen] = NSScreen.screens
     ) -> NSScreen? {
-        guard let windowBounds = frontmostWindowBounds(
+        guard let windowBounds = focusedWindowBounds ?? frontmostWindowBounds(
             for: application.processIdentifier
         ), let targetDisplayID = bestDisplayID(
             for: windowBounds,

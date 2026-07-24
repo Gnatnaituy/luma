@@ -31,7 +31,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var windowPlacement = LauncherWindowPlacement()
     private var presentationScreen: NSScreen?
     private var isUserResizingPanel = false
-    private var pasteTargetApplication: NSRunningApplication?
+    private var pasteTarget: FocusedWindowTarget?
     private var isShowingPastePermissionAlert = false
     private var cancellables = Set<AnyCancellable>()
 
@@ -185,8 +185,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         guard let panel else { return }
         if let frontmostApplication = NSWorkspace.shared.frontmostApplication,
            frontmostApplication.processIdentifier != ProcessInfo.processInfo.processIdentifier {
-            pasteTargetApplication = frontmostApplication
-            presentationScreen = FocusedDisplayResolver.screen(for: frontmostApplication)
+            let target = FocusedWindowTarget.capture(application: frontmostApplication)
+            pasteTarget = target
+            presentationScreen = FocusedDisplayResolver.screen(
+                for: frontmostApplication,
+                focusedWindowBounds: target.windowBounds
+            )
                 ?? FocusedDisplayResolver.screenAtMouse()
                 ?? panel.screen
         } else {
@@ -206,8 +210,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     private func pasteClipboardEntry(_ entry: ClipboardEntry) {
-        guard let targetApplication = pasteTargetApplication,
-              !targetApplication.isTerminated else {
+        guard let target = pasteTarget,
+              !target.application.isTerminated else {
             NSSound.beep()
             return
         }
@@ -218,16 +222,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
 
         panel?.orderOut(nil)
-        targetApplication.activate(options: [.activateAllWindows])
-        postPasteWhenTargetIsFrontmost(targetApplication, remainingAttempts: 12)
+        target.application.activate()
+        postPasteWhenTargetIsFrontmost(target, remainingAttempts: 12)
     }
 
     private func postPasteWhenTargetIsFrontmost(
-        _ targetApplication: NSRunningApplication,
+        _ target: FocusedWindowTarget,
         remainingAttempts: Int
     ) {
+        let targetApplication = target.application
         guard !targetApplication.isTerminated else { return }
         if NSWorkspace.shared.frontmostApplication?.processIdentifier == targetApplication.processIdentifier {
+            target.restoreWindowFocus()
             if !ClipboardPasteShortcut.postToFrontmostApplication() { NSSound.beep() }
             return
         }
@@ -237,7 +243,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
             self?.postPasteWhenTargetIsFrontmost(
-                targetApplication,
+                target,
                 remainingAttempts: remainingAttempts - 1
             )
         }

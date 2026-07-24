@@ -57,6 +57,14 @@ struct JSONSyntaxEditor: NSViewRepresentable {
         var parent: JSONSyntaxEditor
         var isUpdating = false
         private var didAutofocus = false
+        private var pendingHighlight: DispatchWorkItem?
+        private static let tokenPatterns: [(NSRegularExpression, NSColor)] = [
+            (try! NSRegularExpression(pattern: #"[{}\[\],:]"#), .secondaryLabelColor),
+            (try! NSRegularExpression(pattern: #"-?\b(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?\b"#), .systemBlue),
+            (try! NSRegularExpression(pattern: #"\b(?:true|false|null)\b"#), .systemOrange),
+            (try! NSRegularExpression(pattern: #"\"(?:\\.|[^\"\\])*\""#), .systemGreen),
+            (try! NSRegularExpression(pattern: #"\"(?:\\.|[^\"\\])*\"(?=\s*:)"#), .systemPurple)
+        ]
 
         init(parent: JSONSyntaxEditor) {
             self.parent = parent
@@ -65,7 +73,7 @@ struct JSONSyntaxEditor: NSViewRepresentable {
         func textDidChange(_ notification: Notification) {
             guard !isUpdating, let textView = notification.object as? NSTextView else { return }
             parent.text = textView.string
-            applyHighlighting(to: textView)
+            scheduleHighlighting(for: textView)
         }
 
         func focusIfNeeded(_ scrollView: NSScrollView, autofocus: Bool) {
@@ -82,6 +90,7 @@ struct JSONSyntaxEditor: NSViewRepresentable {
         }
 
         func applyHighlighting(to textView: NSTextView) {
+            pendingHighlight?.cancel()
             guard let storage = textView.textStorage else { return }
             let selection = textView.selectedRange()
             let wholeRange = NSRange(location: 0, length: storage.length)
@@ -94,19 +103,30 @@ struct JSONSyntaxEditor: NSViewRepresentable {
             isUpdating = true
             storage.beginEditing()
             storage.setAttributes(base, range: wholeRange)
-            highlight(#"[{}\[\],:]"#, color: .secondaryLabelColor, in: storage)
-            highlight(#"-?\b(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?\b"#, color: .systemBlue, in: storage)
-            highlight(#"\b(?:true|false|null)\b"#, color: .systemOrange, in: storage)
-            highlight(#"\"(?:\\.|[^\"\\])*\""#, color: .systemGreen, in: storage)
-            highlight(#"\"(?:\\.|[^\"\\])*\"(?=\s*:)"#, color: .systemPurple, in: storage)
+            for (regex, color) in Self.tokenPatterns {
+                highlight(regex, color: color, in: storage)
+            }
             storage.endEditing()
             textView.setSelectedRange(selection)
             textView.typingAttributes = base
             isUpdating = false
         }
 
-        private func highlight(_ pattern: String, color: NSColor, in storage: NSTextStorage) {
-            guard let regex = try? NSRegularExpression(pattern: pattern) else { return }
+        private func scheduleHighlighting(for textView: NSTextView) {
+            pendingHighlight?.cancel()
+            let work = DispatchWorkItem { [weak self, weak textView] in
+                guard let self, let textView else { return }
+                self.applyHighlighting(to: textView)
+            }
+            pendingHighlight = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1, execute: work)
+        }
+
+        private func highlight(
+            _ regex: NSRegularExpression,
+            color: NSColor,
+            in storage: NSTextStorage
+        ) {
             let range = NSRange(location: 0, length: storage.length)
             regex.enumerateMatches(in: storage.string, range: range) { result, _, _ in
                 guard let result else { return }
