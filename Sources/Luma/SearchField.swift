@@ -6,6 +6,7 @@ struct LauncherSearchField: NSViewRepresentable {
     let focusRequest: Int
     let onSubmit: () -> Void
     let onMove: (Int) -> Void
+    let onActions: () -> Void
     let onEscape: () -> Void
 
     func makeCoordinator() -> Coordinator {
@@ -61,6 +62,8 @@ struct LauncherSearchField: NSViewRepresentable {
                 parent.onMove(-1); return true
             case #selector(NSResponder.moveDown(_:)):
                 parent.onMove(1); return true
+            case #selector(NSResponder.moveRight(_:)):
+                parent.onActions(); return true
             case #selector(NSResponder.cancelOperation(_:)):
                 parent.onEscape(); return true
             default:

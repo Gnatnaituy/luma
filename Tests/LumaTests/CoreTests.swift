@@ -146,8 +146,8 @@ struct CoreTests {
         let savedStock = try JSONDecoder().decode(StockSnapshot.self, from: JSONEncoder().encode(stock))
         try expect(savedStock == stock, "stock query record persistence")
         try expect(
-            StockDataSource.allCases.map(\.title) == ["腾讯财经", "东方财富", "新浪财经"],
-            "stock settings exposes three selectable data sources"
+            StockDataSource.allCases.map(\.title) == ["自动", "腾讯财经", "东方财富", "新浪财经"],
+            "stock settings exposes automatic fallback and three selectable data sources"
         )
         try expect(
             StockChartPeriod.allCases.map(\.title) == ["分时", "五日", "日K", "周K", "月K"],
@@ -519,10 +519,10 @@ struct CoreTests {
             "National Meteorological Center response parsing"
         )
         try expect(
-            WeatherDataSource.allCases.map(\.title) == ["Open-Meteo", "MET Norway", "中国气象局", "中央气象台"]
+            WeatherDataSource.allCases.map(\.title) == ["自动", "Open-Meteo", "MET Norway", "中国气象局", "中央气象台"]
                 && ChinaWeatherCodeMapper.wmoCode(4) == 95
                 && ChinaWeatherCodeMapper.wmoCode(8) == 63,
-            "weather settings exposes two global and two Chinese free data sources"
+            "weather settings exposes automatic fallback, two global and two Chinese free data sources"
         )
 
         let weatherSuiteName = "app.luma.weather-tests." + UUID().uuidString
@@ -634,6 +634,61 @@ struct CoreTests {
             ClipboardKeyboardNavigation.movedFilter(current: .all, delta: -1) == .link
                 && ClipboardKeyboardNavigation.movedFilter(current: .all, delta: 1) == .favorites,
             "clipboard left and right arrows switch filters"
+        )
+        let longClipboardEntries = (0..<500).map {
+            ClipboardEntry(payload: .text("entry-\($0)"))
+        }
+        var restoredSelection = ClipboardSelectionState(
+            selectedID: longClipboardEntries[347].id
+        )
+        restoredSelection.reset()
+        try expect(
+            restoredSelection.move(in: longClipboardEntries, delta: 1)
+                == longClipboardEntries.first?.id,
+            "re-entering clipboard clears a reused middle selection so the first down arrow selects the first entry"
+        )
+        restoredSelection.select(longClipboardEntries[23].id)
+        try expect(
+            restoredSelection.selectedID == longClipboardEntries[23].id,
+            "single-click selection updates the clipboard selection state"
+        )
+        let firstCopyDate = Date(timeIntervalSince1970: 100)
+        let latestCopyDate = Date(timeIntervalSince1970: 300)
+        let repeatedText = ClipboardEntry(
+            payload: .text("deduplicated text"),
+            copiedAt: firstCopyDate,
+            isFavorite: true
+        )
+        let interveningText = ClipboardEntry(
+            payload: .text("another value"),
+            copiedAt: Date(timeIntervalSince1970: 200)
+        )
+        let deduplicatedTextHistory = ClipboardHistory.inserting(
+            .text("deduplicated text"),
+            into: [interveningText, repeatedText],
+            copiedAt: latestCopyDate
+        )
+        try expect(
+            deduplicatedTextHistory.count == 2
+                && deduplicatedTextHistory.first?.payload == repeatedText.payload
+                && deduplicatedTextHistory.first?.copiedAt == latestCopyDate
+                && deduplicatedTextHistory.first?.isFavorite == true,
+            "repeated text moves to the top, refreshes its timestamp, and preserves favorite state"
+        )
+        let repeatedLink = ClipboardEntry(
+            payload: .link(URL(string: "https://example.com/luma")!),
+            copiedAt: firstCopyDate
+        )
+        let deduplicatedLinkHistory = ClipboardHistory.inserting(
+            repeatedLink.payload,
+            into: [interveningText, repeatedLink],
+            copiedAt: latestCopyDate
+        )
+        try expect(
+            deduplicatedLinkHistory.count == 2
+                && deduplicatedLinkHistory.first?.payload == repeatedLink.payload
+                && deduplicatedLinkHistory.first?.copiedAt == latestCopyDate,
+            "repeated links move to the top without creating duplicate history rows"
         )
 
         _ = NSApplication.shared
@@ -853,6 +908,9 @@ struct CoreTests {
             pluginSettings: pluginSettings,
             installedApps: installedApps,
             recentUsage: recentUsage,
+            fileSearch: FileSearchIndex(),
+            quicklinks: QuicklinkStore(defaults: recentDefaults),
+            snippets: SnippetStore(defaults: recentDefaults),
             applicationOpener: { url in
                 openedApplicationURL = url
                 return true
@@ -957,6 +1015,7 @@ struct CoreTests {
             focusRequest: 0,
             onSubmit: navigationModel.activateSelected,
             onMove: navigationModel.moveSelection,
+            onActions: navigationModel.toggleActions,
             onEscape: { _ = navigationModel.handleEscape() }
         )
         let searchCoordinator = searchBridge.makeCoordinator()

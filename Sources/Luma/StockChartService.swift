@@ -74,6 +74,8 @@ struct StockChartService {
         do {
             let points: [StockPoint]
             switch source {
+            case .automatic:
+                points = try await TencentStockChartService().fetch(symbol: symbol, period: period)
             case .tencent:
                 points = try await TencentStockChartService().fetch(symbol: symbol, period: period)
             case .eastMoney:

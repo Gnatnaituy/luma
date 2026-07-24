@@ -70,6 +70,30 @@ final class FocusedWindowTarget {
         AXUIElementPerformAction(window, kAXRaiseAction as CFString)
     }
 
+    func apply(layout: WindowLayout, on screen: NSScreen) {
+        guard let window else { return }
+        let frame = screen.visibleFrame
+        let target: CGRect
+        switch layout {
+        case .left: target = CGRect(x: frame.minX, y: frame.minY, width: frame.width / 2, height: frame.height)
+        case .right: target = CGRect(x: frame.midX, y: frame.minY, width: frame.width / 2, height: frame.height)
+        case .maximize: target = frame
+        case .center:
+            target = CGRect(x: frame.midX - frame.width * 0.35, y: frame.midY - frame.height * 0.35, width: frame.width * 0.7, height: frame.height * 0.7)
+        }
+        let desktopTop = NSScreen.screens.map(\.frame.maxY).max() ?? frame.maxY
+        var point = CGPoint(x: target.minX, y: desktopTop - target.maxY)
+        var size = target.size
+        if let position = AXValueCreate(.cgPoint, &point) {
+            AXUIElementSetAttributeValue(window, kAXPositionAttribute as CFString, position)
+        }
+        if let dimensions = AXValueCreate(.cgSize, &size) {
+            AXUIElementSetAttributeValue(window, kAXSizeAttribute as CFString, dimensions)
+        }
+        application.activate()
+        restoreWindowFocus()
+    }
+
     private func value(
         of attribute: String,
         from element: AXUIElement,

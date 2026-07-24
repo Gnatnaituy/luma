@@ -19,6 +19,8 @@ enum RecentSearchDisplayMode: String, CaseIterable, Identifiable {
 final class ApplicationSettings: ObservableObject {
     @Published private(set) var showsStatusBarIcon: Bool
     @Published private(set) var recentSearchDisplayMode: RecentSearchDisplayMode
+    @Published private(set) var launchesAtLogin: Bool
+    @Published private(set) var loginItemError = ""
 
     var applyHandler: ((Bool) -> Void)?
 
@@ -36,6 +38,18 @@ final class ApplicationSettings: ObservableObject {
         recentSearchDisplayMode = defaults
             .string(forKey: recentSearchDisplayModeStorageKey)
             .flatMap(RecentSearchDisplayMode.init(rawValue:)) ?? .vertical
+        launchesAtLogin = LoginItemManager.isEnabled
+    }
+
+    func setLaunchesAtLogin(_ enabled: Bool) {
+        do {
+            try LoginItemManager.setEnabled(enabled)
+            launchesAtLogin = LoginItemManager.isEnabled
+            loginItemError = ""
+        } catch {
+            launchesAtLogin = LoginItemManager.isEnabled
+            loginItemError = error.localizedDescription
+        }
     }
 
     func setShowsStatusBarIcon(_ isVisible: Bool) {

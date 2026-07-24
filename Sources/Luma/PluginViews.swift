@@ -11,6 +11,11 @@ struct PluginDetailView: View {
     @ObservedObject var stocks: StockStore
     @ObservedObject var weather: WeatherStore
     @ObservedObject var translationSettings: TranslationSettings
+    @ObservedObject var quicklinks: QuicklinkStore
+    @ObservedObject var snippets: SnippetStore
+    @ObservedObject var calendar: CalendarStore
+    let selectedText: String
+    let arrangeWindow: (WindowLayout) -> Void
     let pasteClipboardEntry: (ClipboardEntry) -> Void
 
     @ViewBuilder
@@ -20,10 +25,14 @@ struct PluginDetailView: View {
         case .calculator: CalculatorPluginView()
         case .json: JSONPluginView(clipboard: clipboard)
         case .password: PasswordPluginView(clipboard: clipboard)
-        case .translate: TranslationPluginView(clipboard: clipboard, settings: translationSettings)
+        case .translate: TranslationPluginView(clipboard: clipboard, settings: translationSettings, preferredInput: selectedText)
         case .code: CodePluginView(clipboard: clipboard)
         case .stocks: StocksPluginView(store: stocks)
         case .weather: WeatherPluginView(store: weather)
+        case .quicklinks: QuicklinksPluginView(store: quicklinks)
+        case .snippets: SnippetsPluginView(store: snippets, clipboard: clipboard)
+        case .calendar: CalendarPluginView(store: calendar)
+        case .windows: WindowManagementPluginView(arrange: arrangeWindow)
         }
     }
 }
@@ -34,7 +43,7 @@ struct ClipboardPluginView: View {
     @State private var searchText = ""
     @State private var effectiveSearchText = ""
     @FocusState private var isSearchFocused: Bool
-    @State private var selectedEntryID: UUID?
+    @State private var selectionState = ClipboardSelectionState()
     @State private var keyboardMonitor: Any?
     @State private var navigationDirection = 0
     @State private var navigationStepsSinceScroll = 0
@@ -66,7 +75,7 @@ struct ClipboardPluginView: View {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 6) {
                         ForEach(ClipboardFilter.allCases) { item in
-                            Button { filter = item } label: {
+                            Button { changeFilter(to: item) } label: {
                                 Text(item.title)
                                     .font(.caption.weight(.medium))
                                     .padding(.horizontal, 11)
@@ -105,10 +114,15 @@ struct ClipboardPluginView: View {
                     ScrollView {
                         LazyVStack(spacing: 0) {
                             ForEach(visibleEntries) { entry in
-                                ClipboardEntryRow(entry: entry, clipboard: clipboard, onPaste: onPaste)
+                                ClipboardEntryRow(
+                                    entry: entry,
+                                    clipboard: clipboard,
+                                    onSelect: { selectionState.select(entry.id) },
+                                    onPaste: onPaste
+                                )
                                     .padding(.horizontal, 24)
                                     .background {
-                                        if selectedEntryID == entry.id {
+                                        if selectionState.selectedID == entry.id {
                                             RoundedRectangle(cornerRadius: 9, style: .continuous)
                                                 .fill(Color.accentColor.opacity(0.09))
                                                 .padding(.horizontal, 18)
@@ -131,7 +145,7 @@ struct ClipboardPluginView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .onAppear {
-            ensureValidSelection()
+            resetSelectionAndScrollToTop()
             installKeyboardMonitor()
             DispatchQueue.main.async { isSearchFocused = true }
         }
@@ -140,6 +154,8 @@ struct ClipboardPluginView: View {
             try? await Task.sleep(nanoseconds: 80_000_000)
             guard !Task.isCancelled else { return }
             effectiveSearchText = searchText
+            await Task.yield()
+            resetSelectionAndScrollToTop()
         }
         .onChange(of: visibleEntries.map(\.id)) { _, _ in
             ensureValidSelection(scrollToTop: true)
@@ -176,32 +192,25 @@ struct ClipboardPluginView: View {
     }
 
     private func ensureValidSelection(scrollToTop: Bool = false) {
-        guard !visibleEntries.contains(where: { $0.id == selectedEntryID }) else { return }
-        selectedEntryID = visibleEntries.first?.id
-        navigationDirection = 0
-        navigationStepsSinceScroll = 0
-        if scrollToTop, let selectedEntryID {
-            requestScroll(to: selectedEntryID, edge: .top)
+        let wasValid = selectionState.ensureValid(in: visibleEntries)
+        guard !wasValid else { return }
+        resetNavigationTracking()
+        if scrollToTop, let firstEntryID = visibleEntries.first?.id {
+            requestScroll(to: firstEntryID, edge: .top)
         }
     }
 
     private func moveSelection(_ delta: Int) {
         let entries = visibleEntries
         guard !entries.isEmpty else {
-            selectedEntryID = nil
-            navigationDirection = 0
-            navigationStepsSinceScroll = 0
+            selectionState.reset()
+            resetNavigationTracking()
             return
         }
-        let previousIndex = selectedEntryID.flatMap { selectedID in
+        let previousIndex = selectionState.selectedID.flatMap { selectedID in
             entries.firstIndex(where: { $0.id == selectedID })
         }
-        let nextID = ClipboardKeyboardNavigation.movedSelection(
-            current: selectedEntryID,
-            entries: entries,
-            delta: delta
-        )
-        selectedEntryID = nextID
+        let nextID = selectionState.move(in: entries, delta: delta)
 
         guard let nextID,
               let nextIndex = entries.firstIndex(where: { $0.id == nextID }) else { return }
@@ -231,19 +240,33 @@ struct ClipboardPluginView: View {
     }
 
     private func moveFilter(_ delta: Int) {
-        filter = ClipboardKeyboardNavigation.movedFilter(current: filter, delta: delta)
-        selectedEntryID = clipboard.filteredEntries(filter, matching: searchText).first?.id
-        navigationDirection = 0
-        navigationStepsSinceScroll = 0
-        if let selectedEntryID {
-            requestScroll(to: selectedEntryID, edge: .top)
-        }
+        changeFilter(to: ClipboardKeyboardNavigation.movedFilter(current: filter, delta: delta))
     }
 
     private func pasteSelection() {
-        guard let selectedEntryID,
+        guard let selectedEntryID = selectionState.selectedID,
               let entry = visibleEntries.first(where: { $0.id == selectedEntryID }) else { return }
         onPaste(entry)
+    }
+
+    private func changeFilter(to newFilter: ClipboardFilter) {
+        guard filter != newFilter else { return }
+        filter = newFilter
+        DispatchQueue.main.async {
+            resetSelectionAndScrollToTop()
+        }
+    }
+
+    private func resetSelectionAndScrollToTop() {
+        selectionState.reset()
+        resetNavigationTracking()
+        guard let firstEntryID = visibleEntries.first?.id else { return }
+        requestScroll(to: firstEntryID, edge: .top)
+    }
+
+    private func resetNavigationTracking() {
+        navigationDirection = 0
+        navigationStepsSinceScroll = 0
     }
 
     private func requestScroll(to entryID: UUID, edge: ClipboardScrollEdge) {
@@ -286,9 +309,46 @@ enum ClipboardKeyboardNavigation {
     }
 }
 
+struct ClipboardSelectionState {
+    private(set) var selectedID: UUID?
+
+    init(selectedID: UUID? = nil) {
+        self.selectedID = selectedID
+    }
+
+    mutating func reset() {
+        selectedID = nil
+    }
+
+    mutating func select(_ id: UUID) {
+        selectedID = id
+    }
+
+    @discardableResult
+    mutating func ensureValid(in entries: [ClipboardEntry]) -> Bool {
+        guard let selectedID else { return true }
+        guard entries.contains(where: { $0.id == selectedID }) else {
+            reset()
+            return false
+        }
+        return true
+    }
+
+    @discardableResult
+    mutating func move(in entries: [ClipboardEntry], delta: Int) -> UUID? {
+        selectedID = ClipboardKeyboardNavigation.movedSelection(
+            current: selectedID,
+            entries: entries,
+            delta: delta
+        )
+        return selectedID
+    }
+}
+
 struct ClipboardEntryRow: View {
     let entry: ClipboardEntry
     @ObservedObject var clipboard: ClipboardMonitor
+    let onSelect: () -> Void
     let onPaste: (ClipboardEntry) -> Void
     @State private var isImageExpanded: Bool
 
@@ -296,10 +356,12 @@ struct ClipboardEntryRow: View {
         entry: ClipboardEntry,
         clipboard: ClipboardMonitor,
         initiallyExpanded: Bool = false,
+        onSelect: @escaping () -> Void = {},
         onPaste: @escaping (ClipboardEntry) -> Void = { _ in }
     ) {
         self.entry = entry
         self.clipboard = clipboard
+        self.onSelect = onSelect
         self.onPaste = onPaste
         _isImageExpanded = State(initialValue: initiallyExpanded)
     }
@@ -324,6 +386,10 @@ struct ClipboardEntryRow: View {
                     Spacer(minLength: 8)
                 }
                 .contentShape(Rectangle())
+                .simultaneousGesture(
+                    TapGesture(count: 1)
+                        .onEnded(onSelect)
+                )
                 .simultaneousGesture(
                     TapGesture(count: 2)
                         .onEnded { onPaste(entry) }

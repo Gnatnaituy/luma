@@ -198,6 +198,7 @@ enum BorderlessTextEditorCommand {
 struct TranslationPluginView: View {
     @ObservedObject var clipboard: ClipboardMonitor
     @ObservedObject var settings: TranslationSettings
+    let preferredInput: String
     @State private var input = ""
     @State private var output = ""
     @State private var isPresented = false
@@ -371,8 +372,11 @@ struct TranslationPluginView: View {
     private func loadClipboardTextIfNeeded() {
         guard !didLoadClipboard else { return }
         didLoadClipboard = true
-        guard let text = clipboard.currentPlainText() else { return }
-        input = text
+        if !preferredInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            input = preferredInput
+        } else if let text = clipboard.currentPlainText() {
+            input = text
+        }
     }
 
     private func updateTargetLanguage(for text: String) {

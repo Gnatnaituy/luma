@@ -63,6 +63,7 @@ struct WeatherSnapshot: Codable, Equatable, Identifiable {
 }
 
 enum WeatherDataSource: String, CaseIterable, Codable, Identifiable {
+    case automatic
     case openMeteo
     case metNorway
     case chinaMeteorologicalAdministration
@@ -72,6 +73,7 @@ enum WeatherDataSource: String, CaseIterable, Codable, Identifiable {
 
     var title: String {
         switch self {
+        case .automatic: "自动"
         case .openMeteo: "Open-Meteo"
         case .metNorway: "MET Norway"
         case .chinaMeteorologicalAdministration: "中国气象局"
@@ -81,6 +83,7 @@ enum WeatherDataSource: String, CaseIterable, Codable, Identifiable {
 
     var subtitle: String {
         switch self {
+        case .automatic: "优先 Open-Meteo，失败时自动切换 MET Norway 与中国数据源"
         case .openMeteo: "免密钥，全球覆盖，提供当前、逐小时与七日聚合预报"
         case .metNorway: "挪威气象研究所官方接口，免密钥，提供全球未来约九日预报"
         case .chinaMeteorologicalAdministration: "中国气象局官方气象站实况与七日预报，仅支持中国境内"
@@ -888,7 +891,7 @@ final class WeatherStore: ObservableObject {
         self.defaults = defaults
         customAdder = adder
         customFetcher = fetcher
-        dataSource = WeatherDataSource(rawValue: defaults.string(forKey: dataSourceKey) ?? "") ?? .openMeteo
+        dataSource = WeatherDataSource(rawValue: defaults.string(forKey: dataSourceKey) ?? "") ?? .automatic
         if let preloadedRecords {
             records = preloadedRecords
             selectedLocationID = preloadedRecords.first?.id
@@ -1030,6 +1033,17 @@ final class WeatherStore: ObservableObject {
     ) async throws -> WeatherSnapshot {
         if let customFetcher { return try await customFetcher(location) }
         switch source {
+        case .automatic:
+            var candidates: [WeatherDataSource] = [.openMeteo, .metNorway]
+            if location.country.localizedCaseInsensitiveContains("china") || location.country.contains("中国") {
+                candidates += [.chinaMeteorologicalAdministration, .nationalMeteorologicalCenter]
+            }
+            var lastError: Error = WeatherServiceError.invalidResponse
+            for candidate in candidates {
+                do { return try await fetchSnapshot(location, source: candidate, customFetcher: nil) }
+                catch { lastError = error }
+            }
+            throw lastError
         case .openMeteo: return try await OpenMeteoWeatherService().fetch(location)
         case .metNorway: return try await METNorwayWeatherService().fetch(location)
         case .chinaMeteorologicalAdministration: return try await CMAWeatherService().fetch(location)
