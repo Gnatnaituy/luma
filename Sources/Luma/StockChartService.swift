@@ -7,6 +7,8 @@ enum StockChartPeriod: String, CaseIterable, Identifiable {
     case weekly
     case monthly
 
+    static let defaultSelection: StockChartPeriod = .intraday
+
     var id: String { rawValue }
 
     var title: String {

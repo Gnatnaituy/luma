@@ -17,7 +17,7 @@ struct PluginDetailView: View {
     var body: some View {
         switch plugin {
         case .clipboard: ClipboardPluginView(clipboard: clipboard, onPaste: pasteClipboardEntry)
-        case .calculator: CalculatorPluginView(clipboard: clipboard)
+        case .calculator: CalculatorPluginView()
         case .json: JSONPluginView(clipboard: clipboard)
         case .password: PasswordPluginView(clipboard: clipboard)
         case .translate: TranslationPluginView(clipboard: clipboard, settings: translationSettings)
@@ -479,45 +479,130 @@ struct ClipboardEntryRow: View {
     }
 }
 
-private struct CalculatorPluginView: View {
-    @ObservedObject var clipboard: ClipboardMonitor
-    @State private var expression = "(18 + 6) * 3 / 2"
-    @FocusState private var isExpressionFocused: Bool
+struct CalculationRecord: Codable, Identifiable, Equatable {
+    let id: UUID
+    let expression: String
+    let result: String
 
-    private var result: Result<Double, Error> {
-        Result { try ExpressionEvaluator.evaluate(expression) }
+    init(id: UUID = UUID(), expression: String, result: String) {
+        self.id = id
+        self.expression = expression
+        self.result = result
+    }
+}
+
+enum CalculationHistory {
+    static let maximumCount = 15
+
+    static func appending(
+        expression: String,
+        result: String,
+        to records: [CalculationRecord]
+    ) -> [CalculationRecord] {
+        let updated = records + [CalculationRecord(expression: expression, result: result)]
+        return Array(updated.suffix(maximumCount))
+    }
+}
+
+final class CalculationHistoryStore: ObservableObject {
+    @Published private(set) var records: [CalculationRecord]
+
+    private let defaults: UserDefaults
+    private let storageKey = "luma.calculator.history.v1"
+
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+        if let data = defaults.data(forKey: storageKey),
+           let decoded = try? JSONDecoder().decode([CalculationRecord].self, from: data) {
+            records = Array(decoded.suffix(CalculationHistory.maximumCount))
+        } else {
+            records = []
+        }
     }
 
+    func append(expression: String, result: String) {
+        records = CalculationHistory.appending(
+            expression: expression,
+            result: result,
+            to: records
+        )
+        guard let data = try? JSONEncoder().encode(records) else { return }
+        defaults.set(data, forKey: storageKey)
+    }
+}
+
+private struct CalculatorPluginView: View {
+    @StateObject private var history = CalculationHistoryStore()
+    @State private var expression = ""
+    @State private var errorMessage: String?
+    @FocusState private var isExpressionFocused: Bool
+
     var body: some View {
-        Form {
-            Section("表达式") {
-                TextField("例如：sqrt(81) + 2^3", text: $expression)
-                    .font(.system(size: 22, design: .monospaced))
-                    .textFieldStyle(LumaTextFieldStyle(height: 38))
-                    .focused($isExpressionFocused)
+        VStack(alignment: .leading, spacing: 12) {
+            TextField("", text: $expression)
+                .font(.system(size: 20, design: .monospaced))
+                .textFieldStyle(.plain)
+                .foregroundStyle(Color.black)
+                .padding(.horizontal, 12)
+                .frame(height: 42)
+                .background(Color.white, in: RoundedRectangle(cornerRadius: 8))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(Color.black.opacity(0.12), lineWidth: 1)
+                }
+                .focused($isExpressionFocused)
+                .onSubmit(calculate)
+                .accessibilityLabel("计算表达式")
+
+            if let errorMessage {
+                Label(errorMessage, systemImage: "exclamationmark.triangle")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
             }
-            Section("结果") {
-                switch result {
-                case .success(let value):
-                    HStack {
-                        Text(ExpressionEvaluator.display(value))
-                            .font(.system(size: 34, weight: .semibold, design: .rounded))
+
+            VStack(spacing: 5) {
+                ForEach(history.records) { record in
+                    HStack(spacing: 12) {
+                        Text(record.expression)
+                            .font(.system(.body, design: .monospaced))
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                        Spacer(minLength: 20)
+                        Text("= \(record.result)")
+                            .font(.system(.body, design: .monospaced).weight(.semibold))
+                            .lineLimit(1)
                             .textSelection(.enabled)
-                        Spacer()
-                        Button("复制") { clipboard.copy(ExpressionEvaluator.display(value)) }
-                            .buttonStyle(LumaTextButtonStyle())
                     }
-                case .failure(let error):
-                    Label(error.localizedDescription, systemImage: "exclamationmark.triangle")
-                        .foregroundStyle(.orange)
+                    .padding(.horizontal, 12)
+                    .frame(height: 40)
+                    .background(
+                        Color.primary.opacity(0.035),
+                        in: RoundedRectangle(cornerRadius: 8)
+                    )
                 }
             }
+
+            Spacer(minLength: 0)
+
             Text("支持 + − × ÷ % ^、括号，以及 sqrt / sin / cos / tan / abs / log / ln。")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
-        .formStyle(.grouped)
+        .padding(24)
         .onAppear { DispatchQueue.main.async { isExpressionFocused = true } }
+    }
+
+    private func calculate() {
+        let source = expression.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !source.isEmpty else { return }
+        do {
+            let result = ExpressionEvaluator.display(try ExpressionEvaluator.evaluate(source))
+            history.append(expression: source, result: result)
+            expression = ""
+            errorMessage = nil
+        } catch {
+            errorMessage = error.localizedDescription
+        }
     }
 }
 
@@ -533,8 +618,10 @@ private struct JSONPluginView: View {
                 .overlay(RoundedRectangle(cornerRadius: 10).stroke(.quaternary))
 
             HStack {
-                Button("格式化") { transform(pretty: true) }
-                    .buttonStyle(LumaTextButtonStyle(emphasis: .primary))
+                Text(message)
+                    .font(.caption)
+                    .foregroundStyle(message.hasPrefix("✓") ? .green : .orange)
+                Spacer()
                 Button("压缩") { transform(pretty: false) }
                     .buttonStyle(LumaTextButtonStyle())
                 Button("转义") { escape() }
@@ -543,10 +630,8 @@ private struct JSONPluginView: View {
                     .buttonStyle(LumaTextButtonStyle())
                 Button("复制") { clipboard.copy(input) }
                     .buttonStyle(LumaTextButtonStyle())
-                Spacer()
-                Text(message)
-                    .font(.caption)
-                    .foregroundStyle(message.hasPrefix("✓") ? .green : .orange)
+                Button("格式化") { transform(pretty: true) }
+                    .buttonStyle(LumaTextButtonStyle(emphasis: .primary))
             }
         }
         .padding(24)
@@ -656,14 +741,20 @@ private struct PasswordPluginView: View {
 struct BorderlessTextEditor: NSViewRepresentable {
     @Binding var text: String
     let autofocus: Bool
+    let onSubmit: (() -> Void)?
 
-    init(text: Binding<String>, autofocus: Bool = false) {
+    init(
+        text: Binding<String>,
+        autofocus: Bool = false,
+        onSubmit: (() -> Void)? = nil
+    ) {
         _text = text
         self.autofocus = autofocus
+        self.onSubmit = onSubmit
     }
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(text: $text)
+        Coordinator(text: $text, onSubmit: onSubmit)
     }
 
     func makeNSView(context: Context) -> NSScrollView {
@@ -704,6 +795,7 @@ struct BorderlessTextEditor: NSViewRepresentable {
     }
 
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
+        context.coordinator.onSubmit = onSubmit
         context.coordinator.focusIfNeeded(scrollView, autofocus: autofocus)
         guard let textView = scrollView.documentView as? NSTextView,
               textView.string != text else { return }
@@ -717,14 +809,26 @@ struct BorderlessTextEditor: NSViewRepresentable {
     final class Coordinator: NSObject, NSTextViewDelegate {
         private var text: Binding<String>
         private var didAutofocus = false
+        var onSubmit: (() -> Void)?
 
-        init(text: Binding<String>) {
+        init(text: Binding<String>, onSubmit: (() -> Void)? = nil) {
             self.text = text
+            self.onSubmit = onSubmit
         }
 
         func textDidChange(_ notification: Notification) {
             guard let textView = notification.object as? NSTextView else { return }
             text.wrappedValue = textView.string
+        }
+
+        func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+            guard let onSubmit,
+                  BorderlessTextEditorCommand.shouldSubmit(
+                    commandSelector,
+                    modifierFlags: NSApp.currentEvent?.modifierFlags ?? []
+                  ) else { return false }
+            onSubmit()
+            return true
         }
 
         func focusIfNeeded(_ scrollView: NSScrollView, autofocus: Bool) {
@@ -742,15 +846,26 @@ struct BorderlessTextEditor: NSViewRepresentable {
     }
 }
 
+enum BorderlessTextEditorCommand {
+    static func shouldSubmit(
+        _ commandSelector: Selector,
+        modifierFlags: NSEvent.ModifierFlags
+    ) -> Bool {
+        commandSelector == #selector(NSResponder.insertNewline(_:))
+            && !modifierFlags.intersection(.deviceIndependentFlagsMask).contains(.shift)
+    }
+}
+
 private struct TranslationPluginView: View {
     @ObservedObject var clipboard: ClipboardMonitor
     @ObservedObject var settings: TranslationSettings
-    @State private var input = "Hello, welcome to Luma."
+    @State private var input = ""
     @State private var output = ""
     @State private var isPresented = false
     @State private var isLoading = false
     @State private var errorMessage: String?
     @State private var targetLanguage = TranslationLanguage.simplifiedChinese
+    @State private var didLoadClipboard = false
 
     var body: some View {
         if settings.backend == .ai {
@@ -780,7 +895,11 @@ private struct TranslationPluginView: View {
 
     private var translationContent: some View {
         VStack(spacing: 12) {
-            BorderlessTextEditor(text: $input, autofocus: true)
+            BorderlessTextEditor(
+                text: $input,
+                autofocus: true,
+                onSubmit: submitTranslation
+            )
                 .padding(10)
                 .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 10))
                 .overlay(RoundedRectangle(cornerRadius: 10).stroke(.quaternary))
@@ -808,7 +927,7 @@ private struct TranslationPluginView: View {
 
                 if settings.backend == .ai {
                     Button {
-                        translateWithAI()
+                        submitTranslation()
                     } label: {
                         if isLoading {
                             HStack(spacing: 6) {
@@ -825,8 +944,7 @@ private struct TranslationPluginView: View {
                               || isLoading)
                 } else {
                     Button("调用系统翻译") {
-                        errorMessage = nil
-                        isPresented = true
+                        submitTranslation()
                     }
                     .buttonStyle(LumaTextButtonStyle(emphasis: .primary))
                     .disabled(input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
@@ -860,6 +978,7 @@ private struct TranslationPluginView: View {
                 }
         }
         .padding(24)
+        .onAppear(perform: loadClipboardTextIfNeeded)
     }
 
     @ViewBuilder
@@ -897,6 +1016,24 @@ private struct TranslationPluginView: View {
             }
             isLoading = false
         }
+    }
+
+    private func submitTranslation() {
+        guard !input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        if settings.backend == .ai {
+            guard !isLoading else { return }
+            translateWithAI()
+        } else {
+            errorMessage = nil
+            isPresented = true
+        }
+    }
+
+    private func loadClipboardTextIfNeeded() {
+        guard !didLoadClipboard else { return }
+        didLoadClipboard = true
+        guard let text = clipboard.currentPlainText() else { return }
+        input = text
     }
 
     private func updateTargetLanguage(for text: String) {
@@ -1626,7 +1763,7 @@ private struct StockDetailView: View {
     @ObservedObject var store: StockStore
     let colorTheme: StockColorTheme
     let refresh: () -> Void
-    @State private var selectedPeriod: StockChartPeriod = .daily
+    @State private var selectedPeriod: StockChartPeriod = .defaultSelection
 
     private var points: [StockPoint] {
         if store.chartPeriod == selectedPeriod, !store.chartPoints.isEmpty { return store.chartPoints }

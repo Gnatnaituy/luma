@@ -201,6 +201,15 @@ final class ClipboardMonitor: ObservableObject {
         write(entry.payload)
     }
 
+    func currentPlainText() -> String? {
+        Self.plainText(from: .general)
+    }
+
+    static func plainText(from pasteboard: NSPasteboard) -> String? {
+        guard case .text(let text) = readPayload(from: pasteboard) else { return nil }
+        return text
+    }
+
     func toggleFavorite(_ entry: ClipboardEntry) {
         guard let index = entries.firstIndex(where: { $0.id == entry.id }) else { return }
         entries[index].isFavorite.toggle()

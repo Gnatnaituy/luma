@@ -17,6 +17,36 @@ enum CoreTests {
         } catch ExpressionError.divisionByZero {
             // Expected.
         }
+        let calculationRecords = (0..<17).reduce(into: [CalculationRecord]()) { records, index in
+            records = CalculationHistory.appending(
+                expression: "\(index) + 1",
+                result: "\(index + 1)",
+                to: records
+            )
+        }
+        try expect(
+            CalculationHistory.maximumCount == 15
+                && calculationRecords.count == 15
+                && calculationRecords.first?.expression == "2 + 1"
+                && calculationRecords.last?.expression == "16 + 1",
+            "calculator keeps the newest fifteen submitted calculations"
+        )
+        let calculationSuiteName = "app.luma.calculator-tests." + UUID().uuidString
+        let calculationDefaults = UserDefaults(suiteName: calculationSuiteName)!
+        calculationDefaults.removePersistentDomain(forName: calculationSuiteName)
+        defer { calculationDefaults.removePersistentDomain(forName: calculationSuiteName) }
+        let calculationStore = CalculationHistoryStore(defaults: calculationDefaults)
+        for index in 0..<17 {
+            calculationStore.append(expression: "\(index) × 2", result: "\(index * 2)")
+        }
+        let restoredCalculationStore = CalculationHistoryStore(defaults: calculationDefaults)
+        try expect(
+            restoredCalculationStore.records.count == 15
+                && restoredCalculationStore.records.first?.expression == "2 × 2"
+                && restoredCalculationStore.records.last?.result == "32",
+            "calculator history persists across app launches"
+        )
+        try expect(Plugin.calculator.title == "计算器", "calculator uses its Chinese plugin name")
 
         let formatted = try JSONTool.format("{\"b\":2,\"a\":1}", pretty: true)
         try expect(formatted.contains("\n"), "pretty JSON")
@@ -118,6 +148,10 @@ enum CoreTests {
         try expect(
             StockChartPeriod.allCases.map(\.title) == ["分时", "五日", "日K", "周K", "月K"],
             "stock chart exposes all requested periods"
+        )
+        try expect(
+            StockChartPeriod.defaultSelection == .intraday,
+            "stock details default to the intraday chart"
         )
         let denseChart = (0..<1_335).map { StockPoint(date: String($0), close: Double($0)) }
         let sampledChart = StockChartSampler.downsample(denseChart, maximumCount: 360)
@@ -637,6 +671,32 @@ enum CoreTests {
             "translation editor exposes only the SwiftUI outer border"
         )
         try expect(
+            BorderlessTextEditorCommand.shouldSubmit(
+                #selector(NSResponder.insertNewline(_:)),
+                modifierFlags: []
+            )
+                && !BorderlessTextEditorCommand.shouldSubmit(
+                    #selector(NSResponder.insertNewline(_:)),
+                    modifierFlags: .shift
+                ),
+            "translation input submits with Return and keeps Shift-Return for a newline"
+        )
+        let translationPasteboard = NSPasteboard(name: .init("app.luma.translation-tests"))
+        translationPasteboard.clearContents()
+        translationPasteboard.setString("Hello Luma", forType: .string)
+        try expect(
+            ClipboardMonitor.plainText(from: translationPasteboard) == "Hello Luma",
+            "translation can read plain clipboard text"
+        )
+        translationPasteboard.clearContents()
+        translationPasteboard.writeObjects([
+            URL(fileURLWithPath: "/tmp/Luma-translation-test.txt") as NSURL
+        ])
+        try expect(
+            ClipboardMonitor.plainText(from: translationPasteboard) == nil,
+            "translation ignores non-text clipboard payloads"
+        )
+        try expect(
             SettingsSection.allCases.map(\.title) == ["应用设置", "快捷键管理", "插件关键词管理", "剪贴板设置", "AI 管理", "翻译设置", "股票设置", "天气设置"],
             "application settings leads the settings navigation"
         )
@@ -1035,7 +1095,7 @@ enum CoreTests {
             "launcher hides all three title-bar window controls"
         )
         let draggedFrame = NSRect(x: 86, y: 620, width: 920, height: 58)
-        windowPlacement.remember(frame: draggedFrame)
+        windowPlacement.remember(frame: draggedFrame, visibleFrame: visibleFrame)
         let expandedAtDraggedPosition = windowPlacement.frame(
             width: 920,
             height: 600,
@@ -1046,6 +1106,53 @@ enum CoreTests {
             expandedAtDraggedPosition.minX == draggedFrame.minX
                 && expandedAtDraggedPosition.maxY == draggedFrame.maxY,
             "runtime window position keeps its top-left anchor while expanding"
+        )
+        let secondaryVisibleFrame = NSRect(x: 1440, y: 0, width: 1920, height: 1080)
+        let secondaryDefaultFrame = windowPlacement.frame(
+            width: 920,
+            height: 600,
+            heightContext: .settings,
+            visibleFrame: secondaryVisibleFrame
+        )
+        try expect(
+            secondaryVisibleFrame.contains(secondaryDefaultFrame)
+                && secondaryDefaultFrame.minX != draggedFrame.minX,
+            "each display starts from its own responsive default position"
+        )
+        let secondaryDraggedFrame = NSRect(x: 1650, y: 380, width: 920, height: 600)
+        windowPlacement.remember(
+            frame: secondaryDraggedFrame,
+            visibleFrame: secondaryVisibleFrame
+        )
+        let reopenedSecondaryFrame = windowPlacement.frame(
+            width: 920,
+            height: 500,
+            heightContext: .plugin(Plugin.translate.rawValue),
+            visibleFrame: secondaryVisibleFrame
+        )
+        let reopenedPrimaryFrame = windowPlacement.frame(
+            width: 920,
+            height: 500,
+            heightContext: .plugin(Plugin.translate.rawValue),
+            visibleFrame: visibleFrame
+        )
+        try expect(
+            reopenedSecondaryFrame.minX == secondaryDraggedFrame.minX
+                && reopenedSecondaryFrame.maxY == secondaryDraggedFrame.maxY
+                && reopenedPrimaryFrame.minX == draggedFrame.minX
+                && reopenedPrimaryFrame.maxY == draggedFrame.maxY,
+            "runtime launcher position is remembered independently for every display"
+        )
+        let displayBounds: [CGDirectDisplayID: CGRect] = [
+            1: CGRect(x: 0, y: 0, width: 1440, height: 900),
+            2: CGRect(x: 1440, y: 0, width: 1920, height: 1080)
+        ]
+        try expect(
+            FocusedDisplayResolver.bestDisplayID(
+                for: CGRect(x: 1600, y: 120, width: 900, height: 700),
+                displayBounds: displayBounds
+            ) == 2,
+            "focused application window resolves to the display with the largest overlap"
         )
         let userResizedFrame = NSRect(x: 86, y: 300, width: 920, height: 420)
         windowPlacement.rememberHeight(userResizedFrame.height, for: .plugin(Plugin.json.rawValue))

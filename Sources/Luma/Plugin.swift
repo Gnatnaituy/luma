@@ -15,7 +15,7 @@ enum Plugin: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .clipboard: "剪贴板"
-        case .calculator: "Code Calc"
+        case .calculator: "计算器"
         case .json: "JSON 编辑器"
         case .password: "随机密码"
         case .translate: "翻译"

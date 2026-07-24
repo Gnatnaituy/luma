@@ -8,15 +8,32 @@ enum LauncherWindowHeightContext: Hashable {
 }
 
 struct LauncherWindowPlacement {
+    private struct ScreenKey: Hashable {
+        let minX: CGFloat
+        let minY: CGFloat
+        let width: CGFloat
+        let height: CGFloat
+
+        init(_ visibleFrame: NSRect) {
+            minX = visibleFrame.minX
+            minY = visibleFrame.minY
+            width = visibleFrame.width
+            height = visibleFrame.height
+        }
+    }
+
     // Captured from the user's chosen position on a 1920 x 1255 visible frame.
     private static let defaultHorizontalRatio: CGFloat = 567.0 / 1920.0
     private static let defaultTopRatio: CGFloat = 1034.0 / 1255.0
 
-    private(set) var rememberedTopLeft: NSPoint?
+    private var rememberedTopLeftOffsets: [ScreenKey: NSPoint] = [:]
     private(set) var rememberedHeights: [LauncherWindowHeightContext: CGFloat] = [:]
 
-    mutating func remember(frame: NSRect) {
-        rememberedTopLeft = NSPoint(x: frame.minX, y: frame.maxY)
+    mutating func remember(frame: NSRect, visibleFrame: NSRect) {
+        rememberedTopLeftOffsets[ScreenKey(visibleFrame)] = NSPoint(
+            x: frame.minX - visibleFrame.minX,
+            y: frame.maxY - visibleFrame.minY
+        )
     }
 
     mutating func rememberHeight(_ height: CGFloat, for context: LauncherWindowHeightContext) {
@@ -39,9 +56,19 @@ struct LauncherWindowPlacement {
             x: visibleFrame.minX + visibleFrame.width * Self.defaultHorizontalRatio,
             y: visibleFrame.minY + visibleFrame.height * Self.defaultTopRatio
         )
-        let topLeft = rememberedTopLeft ?? NSPoint(
-            x: min(max(proposedDefaultTopLeft.x, visibleFrame.minX), visibleFrame.maxX - width),
-            y: min(max(proposedDefaultTopLeft.y, visibleFrame.minY + resolvedHeight), visibleFrame.maxY)
+        let rememberedOffset = rememberedTopLeftOffsets[ScreenKey(visibleFrame)]
+        let proposedTopLeft = rememberedOffset.map {
+            NSPoint(x: visibleFrame.minX + $0.x, y: visibleFrame.minY + $0.y)
+        } ?? proposedDefaultTopLeft
+        let topLeft = NSPoint(
+            x: min(
+                max(proposedTopLeft.x, visibleFrame.minX),
+                max(visibleFrame.minX, visibleFrame.maxX - width)
+            ),
+            y: min(
+                max(proposedTopLeft.y, visibleFrame.minY + resolvedHeight),
+                visibleFrame.maxY
+            )
         )
         return NSRect(
             x: topLeft.x,
