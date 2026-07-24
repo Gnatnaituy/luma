@@ -123,38 +123,57 @@ struct ClipboardEntry: Identifiable, Equatable {
 final class ClipboardMonitor: ObservableObject {
     @Published private(set) var entries: [ClipboardEntry] = []
     @Published private(set) var retentionPeriod: ClipboardRetentionPeriod
+    @Published private(set) var storageLimit: ClipboardStorageLimit
     private var lastChangeCount = NSPasteboard.general.changeCount
     private var timer: Timer?
     private let storage: ClipboardStorage?
     private let settings: UserDefaults
     private let persistenceQueue = DispatchQueue(label: "app.luma.clipboard.persistence", qos: .utility)
+    private var queuedPersistenceSnapshot: [ClipboardEntry]?
+    private var isPersistenceScheduled = false
     private var lastPurgeDate: Date
     private static let retentionKey = "luma.clipboard.retention.v1"
+    private static let storageLimitKey = "luma.clipboard.storage-limit.v1"
+    private static let storageFormatKey = "luma.clipboard.storage-format.v2"
+    private static let currentStorageFormat = 2
 
     init(
         entries: [ClipboardEntry]? = nil,
         storage: ClipboardStorage? = nil,
         settings: UserDefaults = .standard,
         retentionPeriod: ClipboardRetentionPeriod? = nil,
+        storageLimit: ClipboardStorageLimit? = nil,
         referenceDate: Date = Date()
     ) {
         self.settings = settings
         let savedRetention = settings.string(forKey: Self.retentionKey).flatMap(ClipboardRetentionPeriod.init(rawValue:))
         let resolvedRetention = retentionPeriod ?? savedRetention ?? .threeMonths
+        let savedStorageLimit = ClipboardStorageLimit(
+            rawValue: settings.integer(forKey: Self.storageLimitKey)
+        )
+        let resolvedStorageLimit = storageLimit ?? savedStorageLimit ?? .fiveHundredMB
         self.retentionPeriod = resolvedRetention
+        self.storageLimit = resolvedStorageLimit
         self.lastPurgeDate = referenceDate
 
         let resolvedStorage = storage ?? (entries == nil ? ClipboardStorage() : nil)
         self.storage = resolvedStorage
         let loadedEntries = entries ?? resolvedStorage?.load() ?? []
-        let retainedEntries = loadedEntries.filter {
+        let retainedEntries = Self.enforcingStorageLimit(
+            on: loadedEntries.filter {
             resolvedRetention.shouldKeep($0, relativeTo: referenceDate)
-        }
+            },
+            limit: resolvedStorageLimit
+        )
         self.entries = retainedEntries
 
-        if retainedEntries.count != loadedEntries.count, let resolvedStorage {
+        let needsStorageMigration = settings.integer(forKey: Self.storageFormatKey)
+            < Self.currentStorageFormat
+        if retainedEntries.count != loadedEntries.count || needsStorageMigration,
+           let resolvedStorage {
             persistenceQueue.async {
                 resolvedStorage.save(retainedEntries)
+                settings.set(Self.currentStorageFormat, forKey: Self.storageFormatKey)
             }
         }
     }
@@ -233,6 +252,14 @@ final class ClipboardMonitor: ObservableObject {
         purgeExpired(referenceDate: referenceDate, forcePersistence: true)
     }
 
+    func updateStorageLimit(_ limit: ClipboardStorageLimit) {
+        guard storageLimit != limit else { return }
+        storageLimit = limit
+        settings.set(limit.rawValue, forKey: Self.storageLimitKey)
+        enforceStorageLimit()
+        persist()
+    }
+
     func purgeExpired(referenceDate: Date = Date(), forcePersistence: Bool = false) {
         lastPurgeDate = referenceDate
         let originalCount = entries.count
@@ -243,7 +270,16 @@ final class ClipboardMonitor: ObservableObject {
     }
 
     func flushPersistence() {
-        persistenceQueue.sync {}
+        guard let storage else {
+            persistenceQueue.sync {}
+            return
+        }
+        let snapshot = entries
+        persistenceQueue.sync {
+            queuedPersistenceSnapshot = nil
+            isPersistenceScheduled = false
+            storage.save(snapshot)
+        }
     }
 
     private func write(_ payload: ClipboardPayload) {
@@ -271,6 +307,7 @@ final class ClipboardMonitor: ObservableObject {
         guard let payload = Self.readPayload(from: pasteboard) else { return }
         guard entries.first?.payload != payload else { return }
         entries.insert(ClipboardEntry(payload: payload), at: 0)
+        enforceStorageLimit()
         persist()
     }
 
@@ -306,8 +343,47 @@ final class ClipboardMonitor: ObservableObject {
     private func persist() {
         guard let storage else { return }
         let snapshot = entries
-        persistenceQueue.async {
-            storage.save(snapshot)
+        persistenceQueue.async { [weak self] in
+            guard let self else { return }
+            self.queuedPersistenceSnapshot = snapshot
+            guard !self.isPersistenceScheduled else { return }
+            self.isPersistenceScheduled = true
+            self.persistenceQueue.asyncAfter(deadline: .now() + 0.15) { [weak self] in
+                guard let self else { return }
+                self.isPersistenceScheduled = false
+                guard let latest = self.queuedPersistenceSnapshot else { return }
+                self.queuedPersistenceSnapshot = nil
+                storage.save(latest)
+            }
+        }
+    }
+
+    private func enforceStorageLimit() {
+        entries = Self.enforcingStorageLimit(on: entries, limit: storageLimit)
+    }
+
+    static func enforcingStorageLimit(
+        on entries: [ClipboardEntry],
+        limit: ClipboardStorageLimit
+    ) -> [ClipboardEntry] {
+        var countedImages = Set<String>()
+        var usedBytes: Int64 = 0
+
+        for entry in entries where entry.isFavorite {
+            guard case .image(let image) = entry.payload,
+                  countedImages.insert(image.storageIdentity).inserted else { continue }
+            usedBytes += image.storageByteCount
+        }
+
+        return entries.filter { entry in
+            guard case .image(let image) = entry.payload else { return true }
+            let identity = image.storageIdentity
+            if entry.isFavorite || countedImages.contains(identity) { return true }
+            let size = image.storageByteCount
+            guard usedBytes + size <= limit.maximumBytes else { return false }
+            countedImages.insert(identity)
+            usedBytes += size
+            return true
         }
     }
 }

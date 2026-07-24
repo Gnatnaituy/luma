@@ -1,4 +1,5 @@
 import AppKit
+import CryptoKit
 import Foundation
 
 enum ClipboardRetentionPeriod: String, CaseIterable, Identifiable, Codable {
@@ -40,18 +41,42 @@ enum ClipboardRetentionPeriod: String, CaseIterable, Identifiable, Codable {
     }
 }
 
+enum ClipboardStorageLimit: Int, CaseIterable, Identifiable, Codable {
+    case oneHundredMB = 100
+    case twoHundredFiftyMB = 250
+    case fiveHundredMB = 500
+    case oneGB = 1_024
+
+    var id: Int { rawValue }
+    var maximumBytes: Int64 { Int64(rawValue) * 1_024 * 1_024 }
+    var title: String { rawValue == 1_024 ? "1 GB" : "\(rawValue) MB" }
+}
+
 struct ClipboardImage: Equatable {
+    private static let thumbnailCache: NSCache<NSString, NSImage> = {
+        let cache = NSCache<NSString, NSImage>()
+        cache.totalCostLimit = 32 * 1_024 * 1_024
+        return cache
+    }()
+    private let identity: String
+
     let inlineData: Data?
     let fileURL: URL?
 
     init(data: Data) {
+        identity = Self.sha256(data)
         inlineData = data
         fileURL = nil
     }
 
     init(fileURL: URL) {
+        identity = fileURL.standardizedFileURL.path
         inlineData = nil
         self.fileURL = fileURL
+    }
+
+    static func == (lhs: ClipboardImage, rhs: ClipboardImage) -> Bool {
+        lhs.identity == rhs.identity
     }
 
     func makeImage() -> NSImage? {
@@ -61,9 +86,61 @@ struct ClipboardImage: Equatable {
     }
 
     func dataForPersistence() -> Data? {
-        if let inlineData { return inlineData }
-        guard let fileURL else { return nil }
-        return try? Data(contentsOf: fileURL, options: .mappedIfSafe)
+        let original: Data?
+        if let inlineData {
+            original = inlineData
+        } else if let fileURL {
+            original = try? Data(contentsOf: fileURL, options: .mappedIfSafe)
+        } else {
+            original = nil
+        }
+        guard let original else { return nil }
+        guard let image = NSImage(data: original),
+              let tiff = image.tiffRepresentation,
+              let bitmap = NSBitmapImageRep(data: tiff),
+              let png = bitmap.representation(using: .png, properties: [:]) else {
+            return original
+        }
+        return png.count < original.count ? png : original
+    }
+
+    func thumbnail(maxDimension: CGFloat = 96) -> NSImage? {
+        let key = "\(storageIdentity):\(Int(maxDimension))" as NSString
+        if let cached = Self.thumbnailCache.object(forKey: key) { return cached }
+        guard let image = makeImage(), image.size.width > 0, image.size.height > 0 else { return nil }
+        let scale = min(1, maxDimension / max(image.size.width, image.size.height))
+        let size = NSSize(
+            width: max(1, image.size.width * scale),
+            height: max(1, image.size.height * scale)
+        )
+        let thumbnail = NSImage(size: size)
+        thumbnail.lockFocus()
+        NSGraphicsContext.current?.imageInterpolation = .high
+        image.draw(
+            in: NSRect(origin: .zero, size: size),
+            from: NSRect(origin: .zero, size: image.size),
+            operation: .copy,
+            fraction: 1
+        )
+        thumbnail.unlockFocus()
+        Self.thumbnailCache.setObject(thumbnail, forKey: key, cost: Int(size.width * size.height * 4))
+        return thumbnail
+    }
+
+    var storageByteCount: Int64 {
+        if let inlineData { return Int64(inlineData.count) }
+        guard let fileURL,
+              let values = try? fileURL.resourceValues(forKeys: [.fileSizeKey]),
+              let size = values.fileSize else { return 0 }
+        return Int64(size)
+    }
+
+    var storageIdentity: String {
+        identity
+    }
+
+    static func sha256(_ data: Data) -> String {
+        SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
     }
 }
 
@@ -103,7 +180,11 @@ final class ClipboardStorage {
     func save(_ entries: [ClipboardEntry]) {
         do {
             try prepareDirectories()
-            let records = try entries.map(makeRecord)
+            let records = try entries.map { entry in
+                try autoreleasepool {
+                    try makeRecord(entry)
+                }
+            }
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.sortedKeys]
             encoder.dateEncodingStrategy = .millisecondsSince1970
@@ -138,10 +219,10 @@ final class ClipboardStorage {
         case .files(let urls):
             return StoredEntry(entry: entry, kind: .file, urls: urls.map(\.absoluteString))
         case .image(let image):
-            let fileName = entry.id.uuidString + ".image"
+            guard let data = image.dataForPersistence() else { throw StorageError.missingImageData }
+            let fileName = ClipboardImage.sha256(data) + ".image"
             let destination = imagesDirectory.appendingPathComponent(fileName, isDirectory: false)
             if !fileManager.fileExists(atPath: destination.path) {
-                guard let data = image.dataForPersistence() else { throw StorageError.missingImageData }
                 try data.write(to: destination, options: .atomic)
                 try? fileManager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: destination.path)
             }

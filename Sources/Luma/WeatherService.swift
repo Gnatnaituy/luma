@@ -958,18 +958,43 @@ final class WeatherStore: ObservableObject {
     func refreshAll() async {
         guard !isBusy, !records.isEmpty else { return }
         let locations = records.map(\.location)
+        let source = dataSource
+        let customFetcher = customFetcher
         isRefreshingAll = true
         errorMessage = ""
         defer { isRefreshingAll = false }
         var failures = 0
-        for location in locations {
-            do {
-                let snapshot = try await fetch(location)
-                if let index = records.firstIndex(where: { $0.id == snapshot.id }) {
-                    records[index] = snapshot
+        await withTaskGroup(of: WeatherSnapshot?.self) { group in
+            let initialCount = min(4, locations.count)
+            for location in locations.prefix(initialCount) {
+                group.addTask {
+                    try? await Self.fetchSnapshot(
+                        location,
+                        source: source,
+                        customFetcher: customFetcher
+                    )
                 }
-            } catch {
-                failures += 1
+            }
+            var nextIndex = initialCount
+            while let snapshot = await group.next() {
+                if let snapshot {
+                    if let index = records.firstIndex(where: { $0.id == snapshot.id }) {
+                        records[index] = snapshot
+                    }
+                } else {
+                    failures += 1
+                }
+                if nextIndex < locations.count {
+                    let location = locations[nextIndex]
+                    nextIndex += 1
+                    group.addTask {
+                        try? await Self.fetchSnapshot(
+                            location,
+                            source: source,
+                            customFetcher: customFetcher
+                        )
+                    }
+                }
             }
         }
         save()
@@ -995,8 +1020,16 @@ final class WeatherStore: ObservableObject {
     }
 
     private func fetch(_ location: WeatherLocation) async throws -> WeatherSnapshot {
+        try await Self.fetchSnapshot(location, source: dataSource, customFetcher: customFetcher)
+    }
+
+    private nonisolated static func fetchSnapshot(
+        _ location: WeatherLocation,
+        source: WeatherDataSource,
+        customFetcher: ForecastFetcher?
+    ) async throws -> WeatherSnapshot {
         if let customFetcher { return try await customFetcher(location) }
-        switch dataSource {
+        switch source {
         case .openMeteo: return try await OpenMeteoWeatherService().fetch(location)
         case .metNorway: return try await METNorwayWeatherService().fetch(location)
         case .chinaMeteorologicalAdministration: return try await CMAWeatherService().fetch(location)

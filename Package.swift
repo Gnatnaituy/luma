@@ -21,6 +21,11 @@ let package = Package(
                 .linkedFramework("SwiftUI"),
                 .linkedFramework("Translation")
             ]
+        ),
+        .testTarget(
+            name: "LumaTests",
+            dependencies: ["Luma"],
+            path: "Tests/LumaTests"
         )
     ]
 )

@@ -698,21 +698,47 @@ final class StockStore: ObservableObject {
     func refreshAll() async {
         guard !isBusy, !records.isEmpty else { return }
         let symbols = records.map(\.symbol)
+        let source = dataSource
+        let customFetcher = customFetcher
         isRefreshingAll = true
         errorMessage = ""
         defer { isRefreshingAll = false }
 
         var failures = 0
-        for value in symbols {
-            do {
-                let symbol = try StockSymbolParser.parse(value)
-                let snapshot = try await fetch(symbol)
-                if let index = records.firstIndex(where: { $0.symbol == snapshot.symbol }) {
-                    records[index] = snapshot
-                    invalidateChart(for: snapshot.symbol)
+        await withTaskGroup(of: StockSnapshot?.self) { group in
+            let initialCount = min(4, symbols.count)
+            for value in symbols.prefix(initialCount) {
+                group.addTask {
+                    guard let symbol = try? StockSymbolParser.parse(value) else { return nil }
+                    return try? await Self.fetchSnapshot(
+                        symbol,
+                        source: source,
+                        customFetcher: customFetcher
+                    )
                 }
-            } catch {
-                failures += 1
+            }
+            var nextIndex = initialCount
+            while let snapshot = await group.next() {
+                if let snapshot {
+                    if let index = records.firstIndex(where: { $0.symbol == snapshot.symbol }) {
+                        records[index] = snapshot
+                        invalidateChart(for: snapshot.symbol)
+                    }
+                } else {
+                    failures += 1
+                }
+                if nextIndex < symbols.count {
+                    let value = symbols[nextIndex]
+                    nextIndex += 1
+                    group.addTask {
+                        guard let symbol = try? StockSymbolParser.parse(value) else { return nil }
+                        return try? await Self.fetchSnapshot(
+                            symbol,
+                            source: source,
+                            customFetcher: customFetcher
+                        )
+                    }
+                }
             }
         }
         save()
@@ -800,8 +826,16 @@ final class StockStore: ObservableObject {
     }
 
     private func fetch(_ symbol: StockSymbol) async throws -> StockSnapshot {
+        try await Self.fetchSnapshot(symbol, source: dataSource, customFetcher: customFetcher)
+    }
+
+    private nonisolated static func fetchSnapshot(
+        _ symbol: StockSymbol,
+        source: StockDataSource,
+        customFetcher: QuoteFetcher?
+    ) async throws -> StockSnapshot {
         if let customFetcher { return try await customFetcher(symbol) }
-        switch dataSource {
+        switch source {
         case .tencent: return try await TencentStockService().fetch(symbol)
         case .eastMoney: return try await EastMoneyStockService().fetch(symbol)
         case .sina: return try await SinaStockService().fetch(symbol)

@@ -2,11 +2,15 @@ import AppKit
 import Carbon.HIToolbox
 import Foundation
 import SwiftUI
+import Testing
 
-@main
-enum CoreTests {
+@testable import Luma
+
+@Suite(.serialized)
+struct CoreTests {
+    @Test
     @MainActor
-    static func main() async throws {
+    func testCoreBehavior() async throws {
         try expect(ExpressionEvaluator.evaluate("2 + 3 * 4") == 14, "operator precedence")
         try expect(ExpressionEvaluator.evaluate("2 ^ 3 ^ 2") == 512, "right-associative power")
         try expect(ExpressionEvaluator.evaluate("sqrt(81) + abs(-4)") == 13, "functions")
@@ -1280,6 +1284,47 @@ enum CoreTests {
         } else {
             throw TestFailure("persisted image reference")
         }
+        let dedupDirectory = storageDirectory.appendingPathComponent("Deduplicated", isDirectory: true)
+        let dedupStorage = ClipboardStorage(directory: dedupDirectory)
+        let duplicateImageData = Data([1, 3, 3, 7])
+        dedupStorage.save([
+            ClipboardEntry(payload: .image(ClipboardImage(data: duplicateImageData))),
+            ClipboardEntry(payload: .image(ClipboardImage(data: duplicateImageData)))
+        ])
+        let deduplicatedEntries = dedupStorage.load()
+        let deduplicatedURLs = deduplicatedEntries.compactMap { entry -> URL? in
+            guard case .image(let image) = entry.payload else { return nil }
+            return image.fileURL
+        }
+        try expect(
+            deduplicatedEntries.count == 2 && Set(deduplicatedURLs).count == 1,
+            "identical clipboard images share one content-addressed file"
+        )
+
+        let firstLargeImage = storageDirectory.appendingPathComponent("first-large.image")
+        let secondLargeImage = storageDirectory.appendingPathComponent("second-large.image")
+        FileManager.default.createFile(atPath: firstLargeImage.path, contents: nil)
+        FileManager.default.createFile(atPath: secondLargeImage.path, contents: nil)
+        let sparseImageBytes = UInt64(60 * 1_024 * 1_024)
+        let firstHandle = try FileHandle(forWritingTo: firstLargeImage)
+        try firstHandle.truncate(atOffset: sparseImageBytes)
+        try firstHandle.close()
+        let secondHandle = try FileHandle(forWritingTo: secondLargeImage)
+        try secondHandle.truncate(atOffset: sparseImageBytes)
+        try secondHandle.close()
+        let newestLargeImage = ClipboardEntry(
+            payload: .image(ClipboardImage(fileURL: firstLargeImage))
+        )
+        let olderLargeImage = ClipboardEntry(
+            payload: .image(ClipboardImage(fileURL: secondLargeImage))
+        )
+        try expect(
+            ClipboardMonitor.enforcingStorageLimit(
+                on: [newestLargeImage, olderLargeImage],
+                limit: .oneHundredMB
+            ) == [newestLargeImage],
+            "clipboard image limit keeps the newest unfavorited images within budget"
+        )
         let diskBackedMonitor = ClipboardMonitor(storage: clipboardStorage, settings: testSettings)
         if let fileToRemove = diskBackedMonitor.entries.first(where: { $0.kind == .file }) {
             diskBackedMonitor.remove(fileToRemove)
@@ -1320,10 +1365,19 @@ enum CoreTests {
         }
 
         let defaultRetention = ClipboardMonitor(entries: [], settings: testSettings)
-        try expect(defaultRetention.retentionPeriod == .threeMonths, "default clipboard retention")
+        try expect(
+            defaultRetention.retentionPeriod == .threeMonths
+                && defaultRetention.storageLimit == .fiveHundredMB,
+            "default clipboard retention and storage limit"
+        )
         defaultRetention.updateRetentionPeriod(.sevenDays, referenceDate: now)
+        defaultRetention.updateStorageLimit(.twoHundredFiftyMB)
         let restoredSetting = ClipboardMonitor(entries: [], settings: testSettings)
-        try expect(restoredSetting.retentionPeriod == .sevenDays, "clipboard retention setting persisted")
+        try expect(
+            restoredSetting.retentionPeriod == .sevenDays
+                && restoredSetting.storageLimit == .twoHundredFiftyMB,
+            "clipboard retention and storage settings persisted"
+        )
         let shortenedRetention = ClipboardMonitor(
             entries: [recentEntry, oldFavorite],
             settings: testSettings,
@@ -1333,14 +1387,13 @@ enum CoreTests {
         shortenedRetention.updateRetentionPeriod(.oneMonth, referenceDate: now)
         try expect(shortenedRetention.entries == [oldFavorite], "shorter retention purges immediately")
 
-        print("CORE_TESTS_OK")
     }
 
-    private static func expect(_ condition: @autoclosure () throws -> Bool, _ name: String) throws {
+    private func expect(_ condition: @autoclosure () throws -> Bool, _ name: String) throws {
         guard try condition() else { throw TestFailure(name) }
     }
 
-    private static func topVisualInset<V: View>(_ view: V) throws -> Int {
+    private func topVisualInset<V: View>(_ view: V) throws -> Int {
         let width = 715
         let height = 423
         let root = view
@@ -1366,13 +1419,13 @@ enum CoreTests {
         throw TestFailure("clipboard layout has no visible content")
     }
 
-    private static func fittingHeight<V: View>(_ view: V, width: CGFloat) -> CGFloat {
+    private func fittingHeight<V: View>(_ view: V, width: CGFloat) -> CGFloat {
         let hosting = NSHostingView(rootView: view.frame(width: width))
         hosting.layoutSubtreeIfNeeded()
         return hosting.fittingSize.height
     }
 
-    private static func containsScrollView(in view: NSView) -> Bool {
+    private func containsScrollView(in view: NSView) -> Bool {
         if view is NSScrollView { return true }
         return view.subviews.contains(where: containsScrollView(in:))
     }
