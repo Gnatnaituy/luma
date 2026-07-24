@@ -25,6 +25,7 @@ swiftc \
   "$PROJECT_DIR/Sources/Luma/ClipboardMonitor.swift" \
   "$PROJECT_DIR/Sources/Luma/ClipboardPaster.swift" \
   "$PROJECT_DIR/Sources/Luma/ExpressionEvaluator.swift" \
+  "$PROJECT_DIR/Sources/Luma/FocusedDisplayResolver.swift" \
   "$PROJECT_DIR/Sources/Luma/LumaButtonStyles.swift" \
   "$PROJECT_DIR/Sources/Luma/LumaStatusIcon.swift" \
   "$PROJECT_DIR/Sources/Luma/InstalledAppIndex.swift" \

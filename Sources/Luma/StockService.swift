@@ -628,7 +628,7 @@ final class StockStore: ObservableObject {
     @Published private(set) var colorTheme: StockColorTheme
     @Published private(set) var dataSource: StockDataSource
     @Published private(set) var chartPoints: [StockPoint] = []
-    @Published private(set) var chartPeriod: StockChartPeriod = .daily
+    @Published private(set) var chartPeriod: StockChartPeriod = .defaultSelection
     @Published private(set) var isLoadingChart = false
     @Published private(set) var chartErrorMessage = ""
 

@@ -29,6 +29,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var keywordHotKeyIdentifiers: [UUID: UInt32] = [:]
     private var nextKeywordHotKeyIdentifier: UInt32 = 100
     private var windowPlacement = LauncherWindowPlacement()
+    private var presentationScreen: NSScreen?
     private var isUserResizingPanel = false
     private var pasteTargetApplication: NSRunningApplication?
     private var isShowingPastePermissionAlert = false
@@ -185,6 +186,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         if let frontmostApplication = NSWorkspace.shared.frontmostApplication,
            frontmostApplication.processIdentifier != ProcessInfo.processInfo.processIdentifier {
             pasteTargetApplication = frontmostApplication
+            presentationScreen = FocusedDisplayResolver.screen(for: frontmostApplication)
+                ?? FocusedDisplayResolver.screenAtMouse()
+                ?? panel.screen
+        } else {
+            presentationScreen = FocusedDisplayResolver.screenAtMouse()
+                ?? panel.screen
+                ?? NSScreen.main
         }
         model.prepareForPresentation(query: initialQuery)
         resizePanel(
@@ -283,7 +291,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     private func resizePanel(to height: CGFloat, animated: Bool) {
-        guard let panel, let screen = NSScreen.main ?? NSScreen.screens.first else { return }
+        guard let panel,
+              let screen = presentationScreen ?? panel.screen ?? NSScreen.main ?? NSScreen.screens.first
+        else { return }
         let width: CGFloat = 920
         let minimumHeight = model.presentation == .search ? height : 280
         panel.minSize = NSSize(width: width, height: minimumHeight)
@@ -381,7 +391,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     func windowDidMove(_ notification: Notification) {
         guard let window = notification.object as? NSWindow, window === panel else { return }
-        windowPlacement.remember(frame: window.frame)
+        guard let screen = FocusedDisplayResolver.screen(containing: window.frame) else { return }
+        presentationScreen = screen
+        windowPlacement.remember(frame: window.frame, visibleFrame: screen.visibleFrame)
     }
 
     func windowWillStartLiveResize(_ notification: Notification) {
