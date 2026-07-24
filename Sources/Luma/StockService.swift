@@ -149,6 +149,7 @@ enum StockColorTheme: String, CaseIterable, Codable, Identifiable {
 }
 
 enum StockDataSource: String, CaseIterable, Codable, Identifiable {
+    case automatic
     case tencent
     case eastMoney
     case sina
@@ -157,6 +158,7 @@ enum StockDataSource: String, CaseIterable, Codable, Identifiable {
 
     var title: String {
         switch self {
+        case .automatic: "自动"
         case .tencent: "腾讯财经"
         case .eastMoney: "东方财富"
         case .sina: "新浪财经"
@@ -165,6 +167,7 @@ enum StockDataSource: String, CaseIterable, Codable, Identifiable {
 
     var subtitle: String {
         switch self {
+        case .automatic: "按腾讯、东方财富、新浪顺序自动切换故障数据源"
         case .tencent: "免密钥，支持 A 股、港股、美股与近 30 日走势"
         case .eastMoney: "免密钥，支持 A 股、港股、美股；走势数据尽力获取"
         case .sina: "免密钥，支持 A 股、港股、美股实时报价"
@@ -656,7 +659,7 @@ final class StockStore: ObservableObject {
         colorTheme = StockColorTheme(rawValue: defaults.string(forKey: colorThemeKey) ?? "")
             ?? .greenUpRedDown
         dataSource = StockDataSource(rawValue: defaults.string(forKey: dataSourceKey) ?? "")
-            ?? .tencent
+            ?? .automatic
         if let preloadedRecords {
             records = preloadedRecords
             selectedSymbol = preloadedRecords.first?.symbol
@@ -836,6 +839,13 @@ final class StockStore: ObservableObject {
     ) async throws -> StockSnapshot {
         if let customFetcher { return try await customFetcher(symbol) }
         switch source {
+        case .automatic:
+            var lastError: Error = StockServiceError.invalidResponse
+            for candidate in [StockDataSource.tencent, .eastMoney, .sina] {
+                do { return try await fetchSnapshot(symbol, source: candidate, customFetcher: nil) }
+                catch { lastError = error }
+            }
+            throw lastError
         case .tencent: return try await TencentStockService().fetch(symbol)
         case .eastMoney: return try await EastMoneyStockService().fetch(symbol)
         case .sina: return try await SinaStockService().fetch(symbol)

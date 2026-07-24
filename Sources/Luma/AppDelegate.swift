@@ -15,11 +15,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private lazy var translationSettings = TranslationSettings(aiSettings: aiSettings)
     private let installedApps = InstalledAppIndex()
     private let recentUsage = RecentUsageStore()
+    private let quicklinks = QuicklinkStore()
+    private let snippets = SnippetStore()
+    private let fileSearch = FileSearchIndex()
+    private let calendar = CalendarStore()
     private lazy var model = LauncherModel(
         clipboard: clipboard,
         pluginSettings: pluginSettings,
         installedApps: installedApps,
-        recentUsage: recentUsage
+        recentUsage: recentUsage,
+        fileSearch: fileSearch,
+        quicklinks: quicklinks,
+        snippets: snippets,
+        textPaster: { [weak self] text in
+            self?.pasteText(text)
+        }
     )
     private var panel: LauncherPanel?
     private var statusItem: NSStatusItem?
@@ -29,9 +39,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var keywordHotKeyIdentifiers: [UUID: UInt32] = [:]
     private var nextKeywordHotKeyIdentifier: UInt32 = 100
     private var windowPlacement = LauncherWindowPlacement()
-    private var presentationScreen: NSScreen?
+    private let launcherSession = LauncherSession()
     private var isUserResizingPanel = false
-    private var pasteTarget: FocusedWindowTarget?
     private var isShowingPastePermissionAlert = false
     private var cancellables = Set<AnyCancellable>()
 
@@ -94,8 +103,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             pluginSettings: pluginSettings,
             aiSettings: aiSettings,
             translationSettings: translationSettings,
+            quicklinks: quicklinks,
+            snippets: snippets,
+            calendar: calendar,
             pasteClipboardEntry: { [weak self] entry in
                 self?.pasteClipboardEntry(entry)
+            },
+            arrangeWindow: { [weak self] layout in
+                guard let self else { return }
+                self.launcherSession.arrange(layout, panel: self.panel)
             },
             dismiss: { [weak self] in
                 self?.panel?.orderOut(nil)
@@ -183,21 +199,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     private func showPanel(initialQuery: String = "") {
         guard let panel else { return }
-        if let frontmostApplication = NSWorkspace.shared.frontmostApplication,
-           frontmostApplication.processIdentifier != ProcessInfo.processInfo.processIdentifier {
-            let target = FocusedWindowTarget.capture(application: frontmostApplication)
-            pasteTarget = target
-            presentationScreen = FocusedDisplayResolver.screen(
-                for: frontmostApplication,
-                focusedWindowBounds: target.windowBounds
-            )
-                ?? FocusedDisplayResolver.screenAtMouse()
-                ?? panel.screen
-        } else {
-            presentationScreen = FocusedDisplayResolver.screenAtMouse()
-                ?? panel.screen
-                ?? NSScreen.main
-        }
+        launcherSession.captureBeforePresentation(panel: panel)
         model.prepareForPresentation(query: initialQuery)
         resizePanel(
             to: model.preferredWindowHeight(
@@ -210,43 +212,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     private func pasteClipboardEntry(_ entry: ClipboardEntry) {
-        guard let target = pasteTarget,
-              !target.application.isTerminated else {
-            NSSound.beep()
-            return
+        launcherSession.paste(
+            entry: entry,
+            clipboard: clipboard,
+            panel: panel
+        ) { [weak self] in
+            self?.showPastePermissionAlert()
         }
-        clipboard.copy(entry)
-        guard ClipboardPasteShortcut.requestEventPostingAccess() else {
-            showPastePermissionAlert()
-            return
-        }
-
-        panel?.orderOut(nil)
-        target.application.activate()
-        postPasteWhenTargetIsFrontmost(target, remainingAttempts: 12)
     }
 
-    private func postPasteWhenTargetIsFrontmost(
-        _ target: FocusedWindowTarget,
-        remainingAttempts: Int
-    ) {
-        let targetApplication = target.application
-        guard !targetApplication.isTerminated else { return }
-        if NSWorkspace.shared.frontmostApplication?.processIdentifier == targetApplication.processIdentifier {
-            target.restoreWindowFocus()
-            if !ClipboardPasteShortcut.postToFrontmostApplication() { NSSound.beep() }
-            return
-        }
-        guard remainingAttempts > 0 else {
-            if !ClipboardPasteShortcut.post(to: targetApplication.processIdentifier) { NSSound.beep() }
-            return
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
-            self?.postPasteWhenTargetIsFrontmost(
-                target,
-                remainingAttempts: remainingAttempts - 1
-            )
-        }
+    private func pasteText(_ text: String) {
+        pasteClipboardEntry(ClipboardEntry(payload: .text(text)))
     }
 
     private func showPastePermissionAlert() {
@@ -298,7 +274,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     private func resizePanel(to height: CGFloat, animated: Bool) {
         guard let panel,
-              let screen = presentationScreen ?? panel.screen ?? NSScreen.main ?? NSScreen.screens.first
+              let screen = launcherSession.presentationScreen ?? panel.screen ?? NSScreen.main ?? NSScreen.screens.first
         else { return }
         let width: CGFloat = 920
         let minimumHeight = model.presentation == .search ? height : 280
@@ -398,7 +374,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     func windowDidMove(_ notification: Notification) {
         guard let window = notification.object as? NSWindow, window === panel else { return }
         guard let screen = FocusedDisplayResolver.screen(containing: window.frame) else { return }
-        presentationScreen = screen
+        launcherSession.updateScreen(for: window)
         windowPlacement.remember(frame: window.frame, visibleFrame: screen.visibleFrame)
     }
 

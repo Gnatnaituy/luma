@@ -120,6 +120,35 @@ struct ClipboardEntry: Identifiable, Equatable {
     }
 }
 
+enum ClipboardHistory {
+    static func inserting(
+        _ payload: ClipboardPayload,
+        into entries: [ClipboardEntry],
+        copiedAt: Date = Date()
+    ) -> [ClipboardEntry] {
+        switch payload {
+        case .text, .link:
+            let duplicates = entries.filter { $0.payload == payload }
+            let isFavorite = duplicates.contains(where: \.isFavorite)
+            var updated = entries.filter { $0.payload != payload }
+            updated.insert(
+                ClipboardEntry(
+                    payload: payload,
+                    copiedAt: copiedAt,
+                    isFavorite: isFavorite
+                ),
+                at: 0
+            )
+            return updated
+        case .image, .files:
+            guard entries.first?.payload != payload else { return entries }
+            var updated = entries
+            updated.insert(ClipboardEntry(payload: payload, copiedAt: copiedAt), at: 0)
+            return updated
+        }
+    }
+}
+
 final class ClipboardMonitor: ObservableObject {
     @Published private(set) var entries: [ClipboardEntry] = []
     @Published private(set) var retentionPeriod: ClipboardRetentionPeriod
@@ -305,8 +334,9 @@ final class ClipboardMonitor: ObservableObject {
         guard force || pasteboard.changeCount != lastChangeCount else { return }
         lastChangeCount = pasteboard.changeCount
         guard let payload = Self.readPayload(from: pasteboard) else { return }
-        guard entries.first?.payload != payload else { return }
-        entries.insert(ClipboardEntry(payload: payload), at: 0)
+        let updatedEntries = ClipboardHistory.inserting(payload, into: entries)
+        guard updatedEntries != entries else { return }
+        entries = updatedEntries
         enforceStorageLimit()
         persist()
     }

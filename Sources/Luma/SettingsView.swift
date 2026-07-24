@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 enum SettingsSection: String, CaseIterable, Identifiable {
     case application
@@ -62,6 +63,7 @@ struct SettingsView: View {
     @ObservedObject var aiSettings: AISettings
     @ObservedObject var translationSettings: TranslationSettings
     @State private var selection: SettingsSection = .application
+    @State private var backupMessage = ""
 
     init(
         applicationSettings: ApplicationSettings,
@@ -201,6 +203,30 @@ struct SettingsView: View {
             Divider()
 
             HStack(spacing: 14) {
+                Image(systemName: "power")
+                    .font(.system(size: 16, weight: .semibold))
+                    .frame(width: 34, height: 34)
+                    .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 8))
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("登录时启动").font(.headline)
+                    Text("登录 macOS 后自动在后台启动 Luma。").font(.caption).foregroundStyle(.secondary)
+                }
+                Spacer()
+                Toggle("启用", isOn: Binding(
+                    get: { applicationSettings.launchesAtLogin },
+                    set: applicationSettings.setLaunchesAtLogin
+                ))
+                .toggleStyle(LumaToggleStyle())
+            }
+
+            if !applicationSettings.loginItemError.isEmpty {
+                Label(applicationSettings.loginItemError, systemImage: "exclamationmark.triangle")
+                    .font(.caption).foregroundStyle(.red)
+            }
+
+            Divider()
+
+            HStack(spacing: 14) {
                 Image(systemName: "rectangle.grid.1x2")
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(Color.primary)
@@ -228,8 +254,45 @@ struct SettingsView: View {
                     }
                 }
             }
+
+            Divider()
+
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("配置备份").font(.headline)
+                    Text("导出设置、自选项、Quicklinks 与片段；不会导出 AI 密钥。")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button("导入") { importBackup() }.buttonStyle(LumaTextButtonStyle())
+                Button("导出") { exportBackup() }.buttonStyle(LumaTextButtonStyle())
+            }
+            if !backupMessage.isEmpty {
+                Text(backupMessage).font(.caption).foregroundStyle(.secondary)
+            }
         }
         .settingsCard()
+    }
+
+    private func exportBackup() {
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = "Luma-Backup.json"
+        panel.allowedContentTypes = [.json]
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            try SettingsBackup.export().write(to: url, options: .atomic)
+            backupMessage = "已导出到 \(url.lastPathComponent)"
+        } catch { backupMessage = "导出失败：\(error.localizedDescription)" }
+    }
+
+    private func importBackup() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.json]
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            try SettingsBackup.restore(Data(contentsOf: url))
+            backupMessage = "导入完成，重启 Luma 后全部生效"
+        } catch { backupMessage = "导入失败：\(error.localizedDescription)" }
     }
 
     private var shortcutContent: some View {
@@ -476,7 +539,7 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: 8) {
                 Label("无需 API Key", systemImage: "checkmark.shield")
                     .font(.subheadline.weight(.semibold))
-                Text("四个来源均无需密钥；按地点坐标或最近气象站查询，不会在后台自动轮询。")
+                Text("自动模式及四个来源均无需密钥；按地点坐标或最近气象站查询，不会在后台自动轮询。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

@@ -20,7 +20,9 @@ swiftc \
   -framework SwiftUI \
   -framework Carbon \
   -framework CryptoKit \
+  -framework EventKit \
   -framework Security \
+  -framework ServiceManagement \
   -framework Translation \
   "${SOURCE_FILES[@]}" \
   -o "$EXECUTABLE"
