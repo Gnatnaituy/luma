@@ -150,6 +150,7 @@ enum ClipboardHistory {
 }
 
 final class ClipboardMonitor: ObservableObject {
+    private static let maximumCapturedImageBytes = 64 * 1_024 * 1_024
     @Published private(set) var entries: [ClipboardEntry] = []
     @Published private(set) var retentionPeriod: ClipboardRetentionPeriod
     @Published private(set) var storageLimit: ClipboardStorageLimit
@@ -313,12 +314,18 @@ final class ClipboardMonitor: ObservableObject {
 
     private func write(_ payload: ClipboardPayload) {
         let pasteboard = NSPasteboard.general
+        Self.write(payload, to: pasteboard)
+        captureIfNeeded(force: true)
+    }
+
+    static func write(_ payload: ClipboardPayload, to pasteboard: NSPasteboard) {
         pasteboard.clearContents()
         switch payload {
         case .text(let text):
             pasteboard.setString(text, forType: .string)
         case .link(let url):
             pasteboard.writeObjects([url as NSURL])
+            pasteboard.setString(url.absoluteString, forType: .string)
         case .files(let urls):
             pasteboard.writeObjects(urls.map { $0 as NSURL })
         case .image(let storedImage):
@@ -326,7 +333,6 @@ final class ClipboardMonitor: ObservableObject {
                 pasteboard.writeObjects([image])
             }
         }
-        captureIfNeeded(force: true)
     }
 
     private func captureIfNeeded(force: Bool = false) {
@@ -341,7 +347,7 @@ final class ClipboardMonitor: ObservableObject {
         persist()
     }
 
-    private static func readPayload(from pasteboard: NSPasteboard) -> ClipboardPayload? {
+    static func readPayload(from pasteboard: NSPasteboard) -> ClipboardPayload? {
         if let urls = pasteboard.readObjects(
             forClasses: [NSURL.self],
             options: [.urlReadingFileURLsOnly: true]
@@ -349,9 +355,10 @@ final class ClipboardMonitor: ObservableObject {
             return .files(urls)
         }
 
-        if let data = pasteboard.data(forType: .png) ?? pasteboard.data(forType: .tiff),
-           data.count <= 12 * 1024 * 1024,
-           NSImage(data: data) != nil {
+        for type in [NSPasteboard.PasteboardType.png, .tiff] {
+            guard let data = pasteboard.data(forType: type),
+                  data.count <= maximumCapturedImageBytes,
+                  NSImage(data: data) != nil else { continue }
             return .image(ClipboardImage(data: data))
         }
 

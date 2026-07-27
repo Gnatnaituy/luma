@@ -95,47 +95,6 @@ struct SnippetsPluginView: View {
     }
 }
 
-struct CalendarPluginView: View {
-    @ObservedObject var store: CalendarStore
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text("未来 14 天").font(.headline)
-                Spacer()
-                Button { Task { await store.refresh() } } label: { Label("刷新", systemImage: "arrow.clockwise") }
-                    .buttonStyle(LumaTextButtonStyle())
-            }
-            if store.authorizationDenied {
-                ContentUnavailableView("需要日历权限", systemImage: "calendar.badge.exclamationmark", description: Text("请在系统设置中允许 Luma 访问日历"))
-            } else if store.events.isEmpty {
-                ContentUnavailableView("近期没有日程", systemImage: "calendar", description: Text("Luma 会读取系统日历，不会上传日程"))
-            } else {
-                ScrollView {
-                    LazyVStack(spacing: 0) {
-                        ForEach(store.events, id: \.eventIdentifier) { event in
-                            HStack {
-                                VStack(alignment: .leading, spacing: 3) {
-                                    Text(event.title).font(.headline)
-                                    Text(event.startDate.formatted(date: .abbreviated, time: .shortened))
-                                        .font(.caption).foregroundStyle(.secondary)
-                                }
-                                Spacer()
-                                Button("加入会议") { store.join(event) }
-                                    .buttonStyle(LumaTextButtonStyle())
-                            }
-                            .padding(.vertical, 10)
-                            Divider()
-                        }
-                    }
-                }
-            }
-        }
-        .padding(24)
-        .task { await store.refresh() }
-    }
-}
-
 struct WindowManagementPluginView: View {
     let arrange: (WindowLayout) -> Void
 

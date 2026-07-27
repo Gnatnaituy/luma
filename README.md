@@ -68,7 +68,6 @@ Quicklinks 可通过关键词打开 URL、文件或文件夹，并支持动态�
 | 天气 | 多地点天气、逐小时预报与七日预报 |
 | Quicklinks | 关键词驱动的 URL、文件和自定义搜索 |
 | 片段 | 保存常用文本，从主搜索直接粘贴 |
-| 日历 | 展示未来 14 天日程并识别会议链接 |
 | 窗口管理 | 左半屏、右半屏、最大化和居中布局 |
 
 ## 剪贴板
@@ -163,7 +162,6 @@ Luma 只在使用对应功能时请求系统权限。
 | 权限 | 用途 |
 | --- | --- |
 | 辅助功能 | 双击粘贴、读取选中文本、恢复目标窗口和窗口管理 |
-| 日历 | 读取近期日程和会议信息 |
 | 钥匙串 | 保存并读取 AI API Key |
 | 登录项 | 登录 macOS 后自动启动 Luma |
 
@@ -252,7 +250,7 @@ Sources/Luma/
 ├── LauncherView.swift             # 主面板与搜索结果
 ├── Plugin.swift                   # 插件类型与 CommandCatalog
 ├── PluginViews.swift              # 插件路由与剪贴板界面
-├── ProductivityFeatures.swift     # 文件、Quicklinks、片段、日历等能力
+├── ProductivityFeatures.swift     # 文件、Quicklinks、片段等能力
 ├── StockService.swift             # 股票查询与数据源
 ├── WeatherService.swift           # 天气查询与数据源
 ├── ClipboardMonitor.swift         # 剪贴板采集、过滤与去重

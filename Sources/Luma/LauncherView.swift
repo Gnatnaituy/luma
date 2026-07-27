@@ -13,7 +13,6 @@ struct LauncherView: View {
     @ObservedObject var translationSettings: TranslationSettings
     @ObservedObject var quicklinks: QuicklinkStore
     @ObservedObject var snippets: SnippetStore
-    @ObservedObject var calendar: CalendarStore
     let pasteClipboardEntry: (ClipboardEntry) -> Void
     let arrangeWindow: (WindowLayout) -> Void
     let dismiss: () -> Void
@@ -125,7 +124,6 @@ struct LauncherView: View {
                     translationSettings: translationSettings,
                     quicklinks: quicklinks,
                     snippets: snippets,
-                    calendar: calendar,
                     selectedText: model.selectedText,
                     arrangeWindow: arrangeWindow,
                     pasteClipboardEntry: pasteClipboardEntry

@@ -278,6 +278,27 @@ struct CoreTests {
                 && abs(eastMoneyStock.changePercent - 0.28) < 0.0001,
             "East Money quote parsing respects provider precision"
         )
+        let fundamentalsData = Data("""
+        {"rc":0,"data":{"f116":1610992660024.71,"f117":1250992660024.71,"f127":"白酒Ⅱ","f152":2,"f162":1478}}
+        """.utf8)
+        let fundamentals = try EastMoneyStockService.parseFundamentals(data: fundamentalsData)
+        try expect(
+            fundamentals.totalMarketValue == 1_610_992_660_024.71
+                && fundamentals.circulatingMarketValue == 1_250_992_660_024.71
+                && fundamentals.priceEarningsRatio == 14.78
+                && fundamentals.industry == "白酒Ⅱ",
+            "East Money fundamentals parsing supports valuation and industry fields"
+        )
+        let unavailableFundamentals = try EastMoneyStockService.parseFundamentals(
+            data: Data(#"{"rc":0,"data":{"f116":"-","f117":"-","f127":"-","f152":2,"f162":"-"}}"#.utf8)
+        )
+        try expect(
+            unavailableFundamentals.totalMarketValue == nil
+                && unavailableFundamentals.circulatingMarketValue == nil
+                && unavailableFundamentals.priceEarningsRatio == nil
+                && unavailableFundamentals.industry == nil,
+            "East Money placeholder fundamentals remain optional"
+        )
 
         let sinaLine = "var hq_str_sh600115=\"中国东航,3.510,3.510,3.520,3.530,3.460,0,0,177773264,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,2026-07-20,15:34:59\";"
         let sinaStock = try SinaStockService.parse(
@@ -614,6 +635,16 @@ struct CoreTests {
                 && ClipboardPasteShortcut.eventFlags == .maskCommand,
             "clipboard double-click emits Command-V to the previous application"
         )
+        let linkPasteboard = NSPasteboard(
+            name: NSPasteboard.Name("app.luma.tests.link-paste." + UUID().uuidString)
+        )
+        linkPasteboard.clearContents()
+        ClipboardMonitor.write(linkEntry.payload, to: linkPasteboard)
+        try expect(
+            linkPasteboard.string(forType: .URL) == "https://example.com"
+                && linkPasteboard.string(forType: .string) == "https://example.com",
+            "clipboard links expose both URL and plain-text pasteboard representations"
+        )
         try expect(
             ClipboardKeyboardNavigation.movedSelection(
                 current: plainEntry.id,
@@ -705,6 +736,21 @@ struct CoreTests {
         )
 
         let validPNG = Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9ZQmcAAAAASUVORK5CYII=")!
+        var largeValidPNG = validPNG
+        largeValidPNG.append(Data(repeating: 0, count: 13 * 1_024 * 1_024))
+        let largeImagePasteboard = NSPasteboard(
+            name: NSPasteboard.Name("app.luma.tests.large-image." + UUID().uuidString)
+        )
+        largeImagePasteboard.clearContents()
+        largeImagePasteboard.setData(largeValidPNG, forType: .png)
+        let capturedLargeImage = ClipboardMonitor.readPayload(from: largeImagePasteboard).map {
+            if case .image = $0 { return true }
+            return false
+        } ?? false
+        try expect(
+            capturedLargeImage,
+            "clipboard captures valid images larger than the previous 12 MB cutoff"
+        )
         let expandableImageEntry = ClipboardEntry(payload: .image(ClipboardImage(data: validPNG)))
         let imageClipboard = ClipboardMonitor(entries: [expandableImageEntry])
         let collapsedImageHeight = fittingHeight(
