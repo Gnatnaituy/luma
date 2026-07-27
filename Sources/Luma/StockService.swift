@@ -111,6 +111,10 @@ struct StockSnapshot: Codable, Equatable, Identifiable {
     let quoteTime: String
     let points: [StockPoint]
     let fetchedAt: Date
+    var totalMarketValue: Double? = nil
+    var circulatingMarketValue: Double? = nil
+    var priceEarningsRatio: Double? = nil
+    var industry: String? = nil
 
     var id: String { symbol }
     var isRising: Bool { change >= 0 }
@@ -132,6 +136,13 @@ struct StockSnapshot: Codable, Equatable, Identifiable {
         guard let first = points.first?.close, first != 0, let last = points.last?.close else { return nil }
         return (last - first) / first * 100
     }
+}
+
+struct StockFundamentals: Equatable {
+    let totalMarketValue: Double?
+    let circulatingMarketValue: Double?
+    let priceEarningsRatio: Double?
+    let industry: String?
 }
 
 enum StockColorTheme: String, CaseIterable, Codable, Identifiable {
@@ -399,7 +410,10 @@ struct EastMoneyStockService {
         var components = URLComponents(string: "https://push2delay.eastmoney.com/api/qt/stock/get")!
         components.queryItems = [
             URLQueryItem(name: "secid", value: securityID),
-            URLQueryItem(name: "fields", value: "f43,f44,f45,f46,f47,f57,f58,f59,f60,f169,f170,f86")
+            URLQueryItem(
+                name: "fields",
+                value: "f43,f44,f45,f46,f47,f57,f58,f59,f60,f86,f116,f117,f127,f152,f162,f169,f170"
+            )
         ]
         guard let url = components.url else { throw StockServiceError.invalidResponse }
         let data = try await request(url)
@@ -408,6 +422,29 @@ struct EastMoneyStockService {
         guard let quote = response.data else { return nil }
         let points = (try? await fetchPoints(securityID: securityID)) ?? []
         return Self.snapshot(quote: quote, points: points, symbol: symbol)
+    }
+
+    func fetchFundamentals(_ symbol: StockSymbol) async throws -> StockFundamentals {
+        for securityID in securityIDs(for: symbol) {
+            var components = URLComponents(string: "https://push2delay.eastmoney.com/api/qt/stock/get")!
+            components.queryItems = [
+                URLQueryItem(name: "secid", value: securityID),
+                URLQueryItem(name: "fields", value: "f116,f117,f127,f152,f162")
+            ]
+            guard let url = components.url else { continue }
+            let data = try await request(url, attempts: 1)
+            let response = try JSONDecoder().decode(EastMoneyFundamentalsResponse.self, from: data)
+            if response.rc == 0, let quote = response.data {
+                return Self.fundamentals(
+                    totalMarketValue: quote.f116?.value,
+                    circulatingMarketValue: quote.f117?.value,
+                    priceEarningsRatio: quote.f162?.value,
+                    industry: quote.f127,
+                    precision: quote.f152
+                )
+            }
+        }
+        throw StockServiceError.symbolNotFound
     }
 
     private func fetchPoints(securityID: String) async throws -> [StockPoint] {
@@ -466,6 +503,20 @@ struct EastMoneyStockService {
         return snapshot(quote: quote, points: [], symbol: symbol)
     }
 
+    static func parseFundamentals(data: Data) throws -> StockFundamentals {
+        let response = try JSONDecoder().decode(EastMoneyFundamentalsResponse.self, from: data)
+        guard response.rc == 0, let quote = response.data else {
+            throw StockServiceError.symbolNotFound
+        }
+        return fundamentals(
+            totalMarketValue: quote.f116?.value,
+            circulatingMarketValue: quote.f117?.value,
+            priceEarningsRatio: quote.f162?.value,
+            industry: quote.f127,
+            precision: quote.f152
+        )
+    }
+
     private static func snapshot(
         quote: EastMoneyQuote,
         points: [StockPoint],
@@ -473,7 +524,7 @@ struct EastMoneyStockService {
     ) -> StockSnapshot {
         let divisor = pow(10.0, Double(quote.f59 ?? 2))
         let timestamp = quote.f86.map { Date(timeIntervalSince1970: $0) }
-        return StockSnapshot(
+        var snapshot = StockSnapshot(
             symbol: symbol.canonical,
             providerCode: symbol.providerCode,
             name: quote.f58,
@@ -491,11 +542,54 @@ struct EastMoneyStockService {
             points: points,
             fetchedAt: Date()
         )
+        let fundamentals = fundamentals(
+            totalMarketValue: quote.f116?.value,
+            circulatingMarketValue: quote.f117?.value,
+            priceEarningsRatio: quote.f162?.value,
+            industry: quote.f127,
+            precision: quote.f152
+        )
+        snapshot.totalMarketValue = fundamentals.totalMarketValue
+        snapshot.circulatingMarketValue = fundamentals.circulatingMarketValue
+        snapshot.priceEarningsRatio = fundamentals.priceEarningsRatio
+        snapshot.industry = fundamentals.industry
+        return snapshot
+    }
+
+    private static func fundamentals(
+        totalMarketValue: Double?,
+        circulatingMarketValue: Double?,
+        priceEarningsRatio: Double?,
+        industry: String?,
+        precision: Int?
+    ) -> StockFundamentals {
+        let divisor = pow(10.0, Double(precision ?? 2))
+        return StockFundamentals(
+            totalMarketValue: totalMarketValue,
+            circulatingMarketValue: circulatingMarketValue,
+            priceEarningsRatio: priceEarningsRatio.map { $0 / divisor },
+            industry: industry?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .nilIfPlaceholder
+        )
     }
 
     private struct EastMoneyQuoteResponse: Decodable {
         let rc: Int
         let data: EastMoneyQuote?
+    }
+
+    private struct EastMoneyFundamentalsResponse: Decodable {
+        let rc: Int
+        let data: EastMoneyFundamentalsQuote?
+    }
+
+    private struct EastMoneyFundamentalsQuote: Decodable {
+        let f116: EastMoneyOptionalDouble?
+        let f117: EastMoneyOptionalDouble?
+        let f127: String?
+        let f152: Int?
+        let f162: EastMoneyOptionalDouble?
     }
 
     private struct EastMoneyQuote: Decodable {
@@ -510,6 +604,28 @@ struct EastMoneyStockService {
         let f169: Double
         let f170: Double
         let f86: Double?
+        let f116: EastMoneyOptionalDouble?
+        let f117: EastMoneyOptionalDouble?
+        let f127: String?
+        let f152: Int?
+        let f162: EastMoneyOptionalDouble?
+    }
+
+    private struct EastMoneyOptionalDouble: Decodable {
+        let value: Double?
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.singleValueContainer()
+            if container.decodeNil() {
+                value = nil
+            } else if let number = try? container.decode(Double.self) {
+                value = number
+            } else if let text = try? container.decode(String.self) {
+                value = Double(text)
+            } else {
+                value = nil
+            }
+        }
     }
 
     private struct EastMoneyHistoryResponse: Decodable {
@@ -846,10 +962,33 @@ final class StockStore: ObservableObject {
                 catch { lastError = error }
             }
             throw lastError
-        case .tencent: return try await TencentStockService().fetch(symbol)
+        case .tencent:
+            return await enrich(
+                try await TencentStockService().fetch(symbol),
+                symbol: symbol
+            )
         case .eastMoney: return try await EastMoneyStockService().fetch(symbol)
-        case .sina: return try await SinaStockService().fetch(symbol)
+        case .sina:
+            return await enrich(
+                try await SinaStockService().fetch(symbol),
+                symbol: symbol
+            )
         }
+    }
+
+    private nonisolated static func enrich(
+        _ snapshot: StockSnapshot,
+        symbol: StockSymbol
+    ) async -> StockSnapshot {
+        guard let fundamentals = try? await EastMoneyStockService().fetchFundamentals(symbol) else {
+            return snapshot
+        }
+        var result = snapshot
+        result.totalMarketValue = fundamentals.totalMarketValue
+        result.circulatingMarketValue = fundamentals.circulatingMarketValue
+        result.priceEarningsRatio = fundamentals.priceEarningsRatio
+        result.industry = fundamentals.industry
+        return result
     }
 
     private func save() {
@@ -861,6 +1000,10 @@ final class StockStore: ObservableObject {
         chartCache.keys.filter { $0.hasSuffix(":\(symbol)") }.forEach { chartCache.removeValue(forKey: $0) }
         if selectedSymbol == symbol { chartPoints = [] }
     }
+}
+
+private extension String {
+    var nilIfPlaceholder: String? { isEmpty || self == "-" ? nil : self }
 }
 
 private extension Array {

@@ -18,7 +18,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private let quicklinks = QuicklinkStore()
     private let snippets = SnippetStore()
     private let fileSearch = FileSearchIndex()
-    private let calendar = CalendarStore()
     private lazy var model = LauncherModel(
         clipboard: clipboard,
         pluginSettings: pluginSettings,
@@ -105,7 +104,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             translationSettings: translationSettings,
             quicklinks: quicklinks,
             snippets: snippets,
-            calendar: calendar,
             pasteClipboardEntry: { [weak self] entry in
                 self?.pasteClipboardEntry(entry)
             },

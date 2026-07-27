@@ -347,6 +347,19 @@ private struct StockDetailView: View {
                         title: "区间涨跌",
                         text: periodChangePercent.map { String(format: "%+.2f%%", $0) } ?? "—"
                     )
+                    StockMetric(
+                        title: "总值",
+                        text: formatMarketValue(stock.totalMarketValue, currency: stock.currency)
+                    )
+                    StockMetric(
+                        title: "流值",
+                        text: formatMarketValue(stock.circulatingMarketValue, currency: stock.currency)
+                    )
+                    StockMetric(
+                        title: "市盈",
+                        text: stock.priceEarningsRatio.map { String(format: "%.2f", $0) } ?? "—"
+                    )
+                    StockMetric(title: "行业", text: stock.industry ?? "—")
                 }
 
                 HStack(spacing: 8) {
@@ -389,6 +402,27 @@ private struct StockDetailView: View {
         if selectedPeriod == .intraday { return String(value.suffix(4)) }
         if selectedPeriod == .fiveDay { return String(value.prefix(8)) }
         return String(value.prefix(10))
+    }
+
+    private func formatMarketValue(_ value: Double?, currency: String) -> String {
+        guard let value else { return "—" }
+        let prefix: String
+        switch currency {
+        case "CNY": prefix = "¥"
+        case "HKD": prefix = "HK$"
+        case "USD": prefix = "$"
+        default: prefix = ""
+        }
+        if value >= 1_000_000_000_000 {
+            return "\(prefix)\(String(format: "%.2f", value / 1_000_000_000_000))万亿"
+        }
+        if value >= 100_000_000 {
+            return "\(prefix)\(String(format: "%.2f", value / 100_000_000))亿"
+        }
+        if value >= 10_000 {
+            return "\(prefix)\(String(format: "%.2f", value / 10_000))万"
+        }
+        return "\(prefix)\(value.formatted(.number.precision(.fractionLength(0...2))))"
     }
 }
 

@@ -1,7 +1,6 @@
 import AppKit
 import ApplicationServices
 import Combine
-import EventKit
 import Foundation
 import ServiceManagement
 
@@ -169,32 +168,6 @@ enum SelectedTextReader {
               AXUIElementCopyAttributeValue(element, kAXSelectedTextAttribute as CFString, &focused) == .success
         else { return "" }
         return focused as? String ?? ""
-    }
-}
-
-@MainActor
-final class CalendarStore: ObservableObject {
-    @Published private(set) var events: [EKEvent] = []
-    @Published private(set) var authorizationDenied = false
-    private let store = EKEventStore()
-
-    func refresh() async {
-        do {
-            let granted = try await store.requestFullAccessToEvents()
-            guard granted else { authorizationDenied = true; return }
-            authorizationDenied = false
-            let start = Date()
-            let end = Calendar.current.date(byAdding: .day, value: 14, to: start) ?? start
-            events = Array(store.events(matching: store.predicateForEvents(withStart: start, end: end, calendars: nil))
-                .sorted { $0.startDate < $1.startDate }.prefix(30))
-        } catch { authorizationDenied = true }
-    }
-
-    func join(_ event: EKEvent) {
-        let text = [event.url?.absoluteString, event.notes, event.location].compactMap { $0 }.joined(separator: " ")
-        let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue)
-        let range = NSRange(text.startIndex..., in: text)
-        if let url = detector?.firstMatch(in: text, range: range)?.url { NSWorkspace.shared.open(url) }
     }
 }
 

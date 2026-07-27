@@ -11,7 +11,6 @@ enum Plugin: String, CaseIterable, Identifiable {
     case weather
     case quicklinks
     case snippets
-    case calendar
     case windows
 
     var id: String { rawValue }
@@ -47,7 +46,6 @@ enum CommandCatalog {
         case .weather: .init("天气", "添加地点并查看逐小时与七日预报", "cloud.sun.fill", .blue, ["weather", "天气", "气温", "预报", "城市"])
         case .quicklinks: .init("Quicklinks", "用关键词打开网页、文件与自定义搜索", "link.badge.plus", .mint, ["quicklink", "link", "网页", "网址", "搜索"])
         case .snippets: .init("片段", "保存并快速粘贴常用文本", "text.quote", .pink, ["snippet", "片段", "短语", "模板", "粘贴"])
-        case .calendar: .init("日历", "查看近期日程并快速加入会议", "calendar", .red, ["calendar", "日历", "日程", "会议"])
         case .windows: .init("窗口管理", "在当前屏幕排列与移动窗口", "macwindow.on.rectangle", .indigo, ["window", "窗口", "分屏", "布局"])
         }
     }
