@@ -149,6 +149,13 @@ enum WeatherServiceError: LocalizedError {
     }
 }
 
+private enum WeatherFetchEvent {
+    case success(WeatherSnapshot)
+    case failure(Int, Error)
+    case hedge(Int)
+    case cancelled
+}
+
 struct OpenMeteoWeatherService {
     func addLocation(_ query: String) async throws -> WeatherSnapshot {
         let location = try await searchLocation(query)
@@ -1038,16 +1045,104 @@ final class WeatherStore: ObservableObject {
             if location.country.localizedCaseInsensitiveContains("china") || location.country.contains("中国") {
                 candidates += [.chinaMeteorologicalAdministration, .nationalMeteorologicalCenter]
             }
-            var lastError: Error = WeatherServiceError.invalidResponse
-            for candidate in candidates {
-                do { return try await fetchSnapshot(location, source: candidate, customFetcher: nil) }
-                catch { lastError = error }
+            return try await fetchAutomaticSnapshot(
+                location,
+                candidates: candidates,
+                hedgeDelayNanoseconds: 2_000_000_000
+            ) { location, candidate in
+                try await fetchSnapshot(location, source: candidate, customFetcher: nil)
             }
-            throw lastError
         case .openMeteo: return try await OpenMeteoWeatherService().fetch(location)
         case .metNorway: return try await METNorwayWeatherService().fetch(location)
         case .chinaMeteorologicalAdministration: return try await CMAWeatherService().fetch(location)
         case .nationalMeteorologicalCenter: return try await NMCWeatherService().fetch(location)
+        }
+    }
+
+    nonisolated static func fetchAutomaticSnapshot(
+        _ location: WeatherLocation,
+        candidates: [WeatherDataSource],
+        hedgeDelayNanoseconds: UInt64,
+        fetcher: @escaping @Sendable (WeatherLocation, WeatherDataSource) async throws -> WeatherSnapshot
+    ) async throws -> WeatherSnapshot {
+        guard !candidates.isEmpty else { throw WeatherServiceError.invalidResponse }
+        var lastError: Error = WeatherServiceError.invalidResponse
+        return try await withThrowingTaskGroup(of: WeatherFetchEvent.self) { group in
+            var launched: Set<Int> = [0]
+            var failureCount = 0
+            addAutomaticCandidate(
+                at: 0,
+                location: location,
+                candidates: candidates,
+                hedgeDelayNanoseconds: hedgeDelayNanoseconds,
+                fetcher: fetcher,
+                group: &group
+            )
+
+            while let event = try await group.next() {
+                switch event {
+                case .success(let snapshot):
+                    group.cancelAll()
+                    return snapshot
+                case .failure(let index, let error):
+                    failureCount += 1
+                    lastError = error
+                    let nextIndex = index + 1
+                    if candidates.indices.contains(nextIndex), launched.insert(nextIndex).inserted {
+                        addAutomaticCandidate(
+                            at: nextIndex,
+                            location: location,
+                            candidates: candidates,
+                            hedgeDelayNanoseconds: hedgeDelayNanoseconds,
+                            fetcher: fetcher,
+                            group: &group
+                        )
+                    }
+                    if failureCount == candidates.count {
+                        group.cancelAll()
+                        throw lastError
+                    }
+                case .hedge(let index):
+                    if candidates.indices.contains(index), launched.insert(index).inserted {
+                        addAutomaticCandidate(
+                            at: index,
+                            location: location,
+                            candidates: candidates,
+                            hedgeDelayNanoseconds: hedgeDelayNanoseconds,
+                            fetcher: fetcher,
+                            group: &group
+                        )
+                    }
+                case .cancelled:
+                    continue
+                }
+            }
+            throw lastError
+        }
+    }
+
+    private nonisolated static func addAutomaticCandidate(
+        at index: Int,
+        location: WeatherLocation,
+        candidates: [WeatherDataSource],
+        hedgeDelayNanoseconds: UInt64,
+        fetcher: @escaping @Sendable (WeatherLocation, WeatherDataSource) async throws -> WeatherSnapshot,
+        group: inout ThrowingTaskGroup<WeatherFetchEvent, Error>
+    ) {
+        let source = candidates[index]
+        group.addTask {
+            do { return .success(try await fetcher(location, source)) }
+            catch { return .failure(index, error) }
+        }
+        let nextIndex = index + 1
+        guard candidates.indices.contains(nextIndex) else { return }
+        group.addTask {
+            do {
+                try await Task.sleep(nanoseconds: hedgeDelayNanoseconds)
+                return .hedge(nextIndex)
+            } catch {
+                return .cancelled
+            }
         }
     }
 
