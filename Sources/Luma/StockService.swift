@@ -752,9 +752,11 @@ final class StockStore: ObservableObject {
     @Published private(set) var chartErrorMessage = ""
 
     typealias QuoteFetcher = (StockSymbol) async throws -> StockSnapshot
+    typealias FundamentalsFetcher = (StockSymbol) async throws -> StockFundamentals
     typealias ChartFetcher = (StockSymbol, StockChartPeriod, StockDataSource) async throws -> [StockPoint]
 
     private let customFetcher: QuoteFetcher?
+    private let customFundamentalsFetcher: FundamentalsFetcher?
     private let customChartFetcher: ChartFetcher?
     private let defaults: UserDefaults
     private let defaultsKey = "luma.stock.query-records.v1"
@@ -762,15 +764,19 @@ final class StockStore: ObservableObject {
     private let dataSourceKey = "luma.stock.data-source.v1"
     private var chartCache: [String: [StockChartPeriod: [StockPoint]]] = [:]
     private var chartRequestID: UUID?
+    private var fundamentalsTasks: [String: Task<Void, Never>] = [:]
+    private var fundamentalsRequestIDs: [String: UUID] = [:]
 
     init(
         records preloadedRecords: [StockSnapshot]? = nil,
         defaults: UserDefaults = .standard,
         fetcher: QuoteFetcher? = nil,
+        fundamentalsFetcher: FundamentalsFetcher? = nil,
         chartFetcher: ChartFetcher? = nil
     ) {
         self.defaults = defaults
         customFetcher = fetcher
+        customFundamentalsFetcher = fundamentalsFetcher
         customChartFetcher = chartFetcher
         colorTheme = StockColorTheme(rawValue: defaults.string(forKey: colorThemeKey) ?? "")
             ?? .greenUpRedDown
@@ -803,6 +809,7 @@ final class StockStore: ObservableObject {
             defer { isLoading = false }
             let snapshot = try await fetch(symbol)
             upsert(snapshot)
+            scheduleFundamentalsRefresh(for: snapshot, source: dataSource)
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -840,8 +847,9 @@ final class StockStore: ObservableObject {
             while let snapshot = await group.next() {
                 if let snapshot {
                     if let index = records.firstIndex(where: { $0.symbol == snapshot.symbol }) {
-                        records[index] = snapshot
+                        records[index] = preservingFundamentals(in: snapshot, from: records[index])
                         invalidateChart(for: snapshot.symbol)
+                        scheduleFundamentalsRefresh(for: snapshot, source: source)
                     }
                 } else {
                     failures += 1
@@ -874,6 +882,9 @@ final class StockStore: ObservableObject {
 
     func setDataSource(_ source: StockDataSource) {
         guard dataSource != source else { return }
+        fundamentalsTasks.values.forEach { $0.cancel() }
+        fundamentalsTasks.removeAll()
+        fundamentalsRequestIDs.removeAll()
         dataSource = source
         chartCache.removeAll()
         chartPoints = []
@@ -889,6 +900,9 @@ final class StockStore: ObservableObject {
     }
 
     func remove(_ snapshot: StockSnapshot) {
+        fundamentalsTasks[snapshot.symbol]?.cancel()
+        fundamentalsTasks[snapshot.symbol] = nil
+        fundamentalsRequestIDs[snapshot.symbol] = nil
         records.removeAll { $0.symbol == snapshot.symbol }
         invalidateChart(for: snapshot.symbol)
         if selectedSymbol == snapshot.symbol { selectedSymbol = records.first?.symbol }
@@ -936,16 +950,26 @@ final class StockStore: ObservableObject {
     }
 
     private func upsert(_ snapshot: StockSnapshot) {
+        let updated: StockSnapshot
+        if let existing = records.first(where: { $0.symbol == snapshot.symbol }) {
+            updated = preservingFundamentals(in: snapshot, from: existing)
+        } else {
+            updated = snapshot
+        }
         invalidateChart(for: snapshot.symbol)
         records.removeAll { $0.symbol == snapshot.symbol }
-        records.insert(snapshot, at: 0)
+        records.insert(updated, at: 0)
         if records.count > 20 { records.removeLast(records.count - 20) }
         selectedSymbol = snapshot.symbol
         save()
     }
 
     private func fetch(_ symbol: StockSymbol) async throws -> StockSnapshot {
-        try await Self.fetchSnapshot(symbol, source: dataSource, customFetcher: customFetcher)
+        try await Self.fetchSnapshot(
+            symbol,
+            source: dataSource,
+            customFetcher: customFetcher
+        )
     }
 
     private nonisolated static func fetchSnapshot(
@@ -958,36 +982,66 @@ final class StockStore: ObservableObject {
         case .automatic:
             var lastError: Error = StockServiceError.invalidResponse
             for candidate in [StockDataSource.tencent, .eastMoney, .sina] {
-                do { return try await fetchSnapshot(symbol, source: candidate, customFetcher: nil) }
+                do {
+                    return try await fetchSnapshot(
+                        symbol,
+                        source: candidate,
+                        customFetcher: nil
+                    )
+                }
                 catch { lastError = error }
             }
             throw lastError
-        case .tencent:
-            return await enrich(
-                try await TencentStockService().fetch(symbol),
-                symbol: symbol
-            )
+        case .tencent: return try await TencentStockService().fetch(symbol)
         case .eastMoney: return try await EastMoneyStockService().fetch(symbol)
-        case .sina:
-            return await enrich(
-                try await SinaStockService().fetch(symbol),
-                symbol: symbol
-            )
+        case .sina: return try await SinaStockService().fetch(symbol)
         }
     }
 
-    private nonisolated static func enrich(
-        _ snapshot: StockSnapshot,
-        symbol: StockSymbol
-    ) async -> StockSnapshot {
-        guard let fundamentals = try? await EastMoneyStockService().fetchFundamentals(symbol) else {
-            return snapshot
+    private func scheduleFundamentalsRefresh(for snapshot: StockSnapshot, source: StockDataSource) {
+        guard source != .eastMoney else { return }
+        guard snapshot.totalMarketValue == nil,
+              snapshot.circulatingMarketValue == nil,
+              snapshot.priceEarningsRatio == nil,
+              snapshot.industry == nil else { return }
+        guard customFetcher == nil || customFundamentalsFetcher != nil else { return }
+        guard let symbol = try? StockSymbolParser.parse(snapshot.symbol) else { return }
+
+        fundamentalsTasks[snapshot.symbol]?.cancel()
+        let requestID = UUID()
+        fundamentalsRequestIDs[snapshot.symbol] = requestID
+        let fetcher = customFundamentalsFetcher ?? EastMoneyStockService().fetchFundamentals
+        fundamentalsTasks[snapshot.symbol] = Task { @MainActor [weak self] in
+            defer {
+                if let self, self.fundamentalsRequestIDs[snapshot.symbol] == requestID {
+                    self.fundamentalsTasks[snapshot.symbol] = nil
+                    self.fundamentalsRequestIDs[snapshot.symbol] = nil
+                }
+            }
+            guard let fundamentals = try? await fetcher(symbol), !Task.isCancelled else { return }
+            guard let self,
+                  self.fundamentalsRequestIDs[snapshot.symbol] == requestID,
+                  let index = self.records.firstIndex(where: { $0.symbol == snapshot.symbol }) else { return }
+            self.records[index].totalMarketValue = fundamentals.totalMarketValue
+                ?? self.records[index].totalMarketValue
+            self.records[index].circulatingMarketValue = fundamentals.circulatingMarketValue
+                ?? self.records[index].circulatingMarketValue
+            self.records[index].priceEarningsRatio = fundamentals.priceEarningsRatio
+                ?? self.records[index].priceEarningsRatio
+            self.records[index].industry = fundamentals.industry ?? self.records[index].industry
+            self.save()
         }
+    }
+
+    private func preservingFundamentals(
+        in snapshot: StockSnapshot,
+        from existing: StockSnapshot
+    ) -> StockSnapshot {
         var result = snapshot
-        result.totalMarketValue = fundamentals.totalMarketValue
-        result.circulatingMarketValue = fundamentals.circulatingMarketValue
-        result.priceEarningsRatio = fundamentals.priceEarningsRatio
-        result.industry = fundamentals.industry
+        result.totalMarketValue = result.totalMarketValue ?? existing.totalMarketValue
+        result.circulatingMarketValue = result.circulatingMarketValue ?? existing.circulatingMarketValue
+        result.priceEarningsRatio = result.priceEarningsRatio ?? existing.priceEarningsRatio
+        result.industry = result.industry ?? existing.industry
         return result
     }
 
