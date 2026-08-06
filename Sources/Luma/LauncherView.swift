@@ -269,6 +269,16 @@ private struct RecentHorizontalSection: View {
     let items: [RecentUsageItem]
     let action: (RecentUsageItem) -> Void
 
+    private var columns: [GridItem] {
+        Array(
+            repeating: GridItem(
+                .fixed(LauncherModel.horizontalRecentItemWidth),
+                spacing: LauncherModel.horizontalRecentItemSpacing
+            ),
+            count: LauncherModel.horizontalRecentPerRow
+        )
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(title)
@@ -276,24 +286,28 @@ private struct RecentHorizontalSection: View {
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 4)
 
-            ScrollView(.horizontal, showsIndicators: false) {
-                LazyHStack(spacing: 8) {
-                    if items.isEmpty {
-                        Text("暂无最近使用")
-                            .font(.caption)
-                            .foregroundStyle(.tertiary)
-                            .frame(height: 66)
-                    } else {
-                        ForEach(items) { item in
-                            RecentHorizontalItem(item: item) {
-                                action(item)
-                            }
+            LazyVGrid(
+                columns: columns,
+                alignment: .leading,
+                spacing: LauncherModel.horizontalRecentItemSpacing
+            ) {
+                if items.isEmpty {
+                    Text("暂无最近使用")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                        .frame(
+                            width: LauncherModel.horizontalRecentItemWidth,
+                            height: LauncherModel.horizontalRecentItemHeight
+                        )
+                } else {
+                    ForEach(items) { item in
+                        RecentHorizontalItem(item: item) {
+                            action(item)
                         }
                     }
                 }
             }
-            .scrollClipDisabled()
-            .frame(height: 66)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 }
@@ -312,7 +326,10 @@ private struct RecentHorizontalItem: View {
                     .lineLimit(1)
                     .truncationMode(.tail)
             }
-            .frame(width: 72, height: 66)
+            .frame(
+                width: LauncherModel.horizontalRecentItemWidth,
+                height: LauncherModel.horizontalRecentItemHeight
+            )
             .contentShape(Rectangle())
             .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 9))
         }

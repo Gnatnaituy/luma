@@ -1030,18 +1030,30 @@ struct CoreTests {
         recentHosting.layoutSubtreeIfNeeded()
         try expect(!containsScrollView(in: recentHosting), "recent usage fits its content without a scroll container")
         try expect(
+            LauncherModel.horizontalRecentPerRow == 11
+                && LauncherModel.horizontalRecentRows(count: 11) == 1
+                && LauncherModel.horizontalRecentRows(count: 15) == 2,
+            "horizontal recent usage wraps after eleven fixed-width items"
+        )
+        try expect(
             navigationModel.preferredWindowHeight(recentDisplayMode: .horizontal)
-                == LauncherModel.horizontalRecentWindowHeight,
-            "horizontal recent usage uses a compact two-row panel height"
+                == LauncherModel.horizontalRecentPanelHeight(
+                    pluginCount: navigationModel.horizontalRecentItems(of: .plugin).count,
+                    applicationCount: navigationModel.horizontalRecentItems(of: .application).count
+                ),
+            "horizontal recent usage derives panel height from wrapped rows"
         )
         let horizontalRecentHosting = NSHostingView(
             rootView: RecentItemsView(model: navigationModel, displayMode: .horizontal)
-                .frame(width: 920, height: LauncherModel.horizontalRecentWindowHeight - 58)
+                .frame(
+                    width: 920,
+                    height: navigationModel.preferredWindowHeight(recentDisplayMode: .horizontal) - 58
+                )
         )
         horizontalRecentHosting.layoutSubtreeIfNeeded()
         try expect(
-            containsScrollView(in: horizontalRecentHosting),
-            "horizontal recent usage keeps plugin and application rows on one scrolling line"
+            !containsScrollView(in: horizontalRecentHosting),
+            "horizontal recent usage wraps to new lines instead of scrolling"
         )
         navigationModel.showSettings()
         try expect(navigationModel.presentation == .settings && navigationModel.selectedPlugin == nil, "settings is a secondary page")

@@ -31,7 +31,37 @@ enum LauncherSearchResult: Identifiable {
 @MainActor
 final class LauncherModel: ObservableObject {
     static let defaultExpandedWindowHeight: CGFloat = 666
-    static let horizontalRecentWindowHeight: CGFloat = 270
+
+    // 首页横向布局：插件与应用为固定宽度卡片，溢出后自动换行。
+    static let horizontalRecentItemWidth: CGFloat = 72
+    static let horizontalRecentItemHeight: CGFloat = 66
+    static let horizontalRecentItemSpacing: CGFloat = 8
+    static let horizontalRecentSectionSpacing: CGFloat = 12
+    /// 面板宽度 920 减去内容区左右 padding（16 × 2）。
+    static let horizontalRecentContentWidth: CGFloat = 888
+
+    static var horizontalRecentPerRow: Int {
+        max(1, Int((horizontalRecentContentWidth + horizontalRecentItemSpacing)
+            / (horizontalRecentItemWidth + horizontalRecentItemSpacing)))
+    }
+
+    static func horizontalRecentRows(count: Int) -> Int {
+        guard count > 0 else { return 1 }
+        return (count + horizontalRecentPerRow - 1) / horizontalRecentPerRow
+    }
+
+    static func horizontalRecentSectionHeight(rows: Int) -> CGFloat {
+        let titleAndGap: CGFloat = 22
+        return titleAndGap
+            + CGFloat(rows) * horizontalRecentItemHeight
+            + CGFloat(max(0, rows - 1)) * horizontalRecentItemSpacing
+    }
+
+    static func horizontalRecentPanelHeight(pluginCount: Int, applicationCount: Int) -> CGFloat {
+        let pluginHeight = horizontalRecentSectionHeight(rows: horizontalRecentRows(count: pluginCount))
+        let applicationHeight = horizontalRecentSectionHeight(rows: horizontalRecentRows(count: applicationCount))
+        return 24 + pluginHeight + horizontalRecentSectionSpacing + applicationHeight
+    }
 
     @Published var query = "" {
         didSet {
@@ -191,7 +221,10 @@ final class LauncherModel: ObservableObject {
             if recentItems.isEmpty { return 58 }
             switch recentDisplayMode {
             case .horizontal:
-                return Self.horizontalRecentWindowHeight
+                return Self.horizontalRecentPanelHeight(
+                    pluginCount: horizontalRecentItems(of: .plugin).count,
+                    applicationCount: horizontalRecentItems(of: .application).count
+                )
             case .vertical:
                 return CGFloat(96 + recentItems.count * 52)
             }
