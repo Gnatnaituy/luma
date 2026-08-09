@@ -269,7 +269,13 @@ struct SettingsView: View {
 
             Divider()
 
-            HStack {
+            HStack(spacing: 14) {
+                Image(systemName: "externaldrive")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(Color.primary)
+                    .frame(width: 34, height: 34)
+                    .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 8))
+
                 VStack(alignment: .leading, spacing: 4) {
                     Text("配置备份").font(.headline)
                     Text("导出设置、自选项、Quicklinks 与片段；不会导出 AI 密钥。")
