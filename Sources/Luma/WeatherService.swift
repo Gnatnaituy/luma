@@ -1018,6 +1018,19 @@ final class WeatherStore: ObservableObject {
         selectedLocationID = snapshot.id
     }
 
+    func move(_ id: Int, before targetID: Int) {
+        guard id != targetID,
+              let sourceIndex = records.firstIndex(where: { $0.id == id }),
+              records.contains(where: { $0.id == targetID }) else { return }
+        let item = records.remove(at: sourceIndex)
+        guard let targetIndex = records.firstIndex(where: { $0.id == targetID }) else {
+            records.insert(item, at: min(sourceIndex, records.count))
+            return
+        }
+        records.insert(item, at: targetIndex)
+        save()
+    }
+
     func remove(_ snapshot: WeatherSnapshot) {
         records.removeAll { $0.id == snapshot.id }
         if selectedLocationID == snapshot.id { selectedLocationID = records.first?.id }
@@ -1147,8 +1160,11 @@ final class WeatherStore: ObservableObject {
     }
 
     private func upsert(_ snapshot: WeatherSnapshot) {
-        records.removeAll { $0.id == snapshot.id }
-        records.insert(snapshot, at: 0)
+        if let index = records.firstIndex(where: { $0.id == snapshot.id }) {
+            records[index] = snapshot
+        } else {
+            records.insert(snapshot, at: 0)
+        }
         if records.count > 20 { records.removeLast(records.count - 20) }
         selectedLocationID = snapshot.id
         save()

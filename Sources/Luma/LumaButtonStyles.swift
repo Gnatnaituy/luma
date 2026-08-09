@@ -23,6 +23,7 @@ struct LumaIconButtonStyle: ButtonStyle {
             .contentShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
             .scaleEffect(configuration.isPressed ? 0.96 : 1)
             .opacity(isEnabled ? 1 : 0.42)
+            .animation(LumaMotion.press, value: configuration.isPressed)
     }
 }
 
@@ -43,6 +44,7 @@ struct LumaTextButtonStyle: ButtonStyle {
             .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
             .scaleEffect(configuration.isPressed ? 0.98 : 1)
             .opacity(isEnabled ? 1 : 0.42)
+            .animation(LumaMotion.press, value: configuration.isPressed)
     }
 
     private func backgroundColor(isPressed: Bool) -> Color {
@@ -103,6 +105,7 @@ struct LumaSelectionButton: View {
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
+        .animation(LumaMotion.quick, value: isSelected)
     }
 }
 
@@ -175,5 +178,6 @@ struct LumaToggleStyle: ToggleStyle {
             )
         }
         .buttonStyle(.plain)
+        .animation(LumaMotion.quick, value: configuration.isOn)
     }
 }

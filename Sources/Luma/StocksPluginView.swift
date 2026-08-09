@@ -1,10 +1,12 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct StocksPluginView: View {
     @ObservedObject var store: StockStore
     @State private var query = ""
     @State private var suggestions: [StockSearchResult] = []
     @State private var selectedSuggestionID: String?
+    @State private var draggingSymbol: String?
     @FocusState private var isQueryFocused: Bool
 
     var body: some View {
@@ -44,6 +46,7 @@ struct StocksPluginView: View {
                         stockSuggestionPanel
                             .padding(.horizontal, 12)
                             .offset(y: 48)
+                            .transition(.opacity.combined(with: .move(edge: .top)))
                     }
                 }
                 .zIndex(20)
@@ -55,6 +58,7 @@ struct StocksPluginView: View {
                         .fixedSize(horizontal: false, vertical: true)
                         .padding(.horizontal, 12)
                         .padding(.bottom, 8)
+                        .transition(.opacity.combined(with: .move(edge: .top)))
                 }
 
                 if store.records.isEmpty {
@@ -63,9 +67,7 @@ struct StocksPluginView: View {
                     ScrollView {
                         LazyVStack(spacing: 4) {
                             ForEach(store.records) { stock in
-                                Button {
-                                    store.select(stock)
-                                } label: {
+                                WindowDragExclusion {
                                     StockListRow(stock: stock, colorTheme: store.colorTheme)
                                         .padding(.horizontal, 9)
                                         .padding(.vertical, 5)
@@ -75,14 +77,33 @@ struct StocksPluginView: View {
                                             store.selectedSymbol == stock.symbol ? Color.accentColor.opacity(0.14) : Color.clear,
                                             in: RoundedRectangle(cornerRadius: 8)
                                         )
+                                        .onTapGesture {
+                                            store.select(stock)
+                                        }
+                                        .onDrag {
+                                            draggingSymbol = stock.symbol
+                                            return NSItemProvider(object: NSString(string: stock.symbol))
+                                        }
+                                        .onDrop(
+                                            of: [UTType.text],
+                                            delegate: StockRowDropDelegate(
+                                                targetSymbol: stock.symbol,
+                                                draggingSymbol: $draggingSymbol,
+                                                move: { source, target in
+                                                    store.move(source, before: target)
+                                                }
+                                            )
+                                        )
+                                        .contextMenu {
+                                            Button("移除记录", role: .destructive) { store.remove(stock) }
+                                        }
+                                        .accessibilityAddTraits(.isButton)
                                 }
-                                .buttonStyle(.plain)
-                                .contextMenu {
-                                    Button("移除记录", role: .destructive) { store.remove(stock) }
-                                }
+                                .lumaContentTransition()
                             }
                         }
                         .padding(.horizontal, 6)
+                        .animation(LumaMotion.standard, value: store.records.map(\.symbol))
                     }
                 }
             }
@@ -91,24 +112,30 @@ struct StocksPluginView: View {
 
             Divider()
 
-            if let stock = store.selected {
-                StockDetailView(
-                    stock: stock,
-                    store: store,
-                    colorTheme: store.colorTheme
-                ) {
-                    Task {
-                        await store.refreshSelected()
-                        if let refreshed = store.selected {
-                            await store.loadChart(for: refreshed, period: store.chartPeriod, force: true)
+            ZStack(alignment: .topLeading) {
+                if let stock = store.selected {
+                    StockDetailView(
+                        stock: stock,
+                        store: store,
+                        colorTheme: store.colorTheme
+                    ) {
+                        Task {
+                            await store.refreshSelected()
+                            if let refreshed = store.selected {
+                                await store.loadChart(for: refreshed, period: store.chartPeriod, force: true)
+                            }
                         }
                     }
+                    .id(stock.symbol)
+                    .lumaContentTransition()
+                } else {
+                    ContentUnavailableView("还没有行情记录", systemImage: "chart.line.uptrend.xyaxis", description: Text("支持 A 股、港股和美股代码"))
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .lumaContentTransition()
                 }
-                .id(stock.symbol)
-            } else {
-                ContentUnavailableView("还没有行情记录", systemImage: "chart.line.uptrend.xyaxis", description: Text("支持 A 股、港股和美股代码"))
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .animation(LumaMotion.quick, value: store.selectedSymbol)
         }
         .onAppear { DispatchQueue.main.async { isQueryFocused = true } }
         .task(id: query) { await updateSuggestions() }
@@ -152,11 +179,12 @@ struct StocksPluginView: View {
                     )
                 }
                 .buttonStyle(.plain)
+                }
             }
-        }
-        .padding(4)
-        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 9))
-        .overlay(RoundedRectangle(cornerRadius: 9).stroke(Color.primary.opacity(0.12)))
+            .padding(4)
+            .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 9))
+            .overlay(RoundedRectangle(cornerRadius: 9).stroke(Color.primary.opacity(0.12)))
+            .animation(LumaMotion.quick, value: suggestions.map(\.id))
     }
 
     private func updateSuggestions() async {
@@ -192,6 +220,26 @@ struct StocksPluginView: View {
         selectedSuggestionID = nil
         query = ""
         Task { await store.query(suggestion.symbol) }
+    }
+}
+
+private struct StockRowDropDelegate: DropDelegate {
+    let targetSymbol: String
+    @Binding var draggingSymbol: String?
+    let move: (String, String) -> Void
+
+    func dropEntered(info: DropInfo) {
+        guard let draggingSymbol, draggingSymbol != targetSymbol else { return }
+        move(draggingSymbol, targetSymbol)
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        DropProposal(operation: .move)
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        draggingSymbol = nil
+        return true
     }
 }
 

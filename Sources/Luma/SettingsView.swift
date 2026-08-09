@@ -133,6 +133,7 @@ struct SettingsView: View {
         .padding(.horizontal, 8)
         .frame(width: 180)
         .background(Color.primary.opacity(0.025))
+        .animation(LumaMotion.quick, value: selection)
     }
 
     private var detail: some View {
@@ -146,29 +147,40 @@ struct SettingsView: View {
                         .foregroundStyle(.secondary)
                 }
 
-                switch selection {
-                case .application:
-                    applicationContent
-                case .shortcuts:
-                    shortcutContent
-                case .pluginKeywords:
-                    pluginContent
-                case .clipboard:
-                    clipboardContent
-                case .ai:
-                    AIManagementView(settings: aiSettings)
-                case .translation:
-                    TranslationSettingsView(settings: translationSettings, aiSettings: aiSettings)
-                case .stocks:
-                    stockContent
-                case .weather:
-                    weatherContent
+                ZStack(alignment: .topLeading) {
+                    settingsContent
+                        .id(selection.rawValue)
+                        .lumaContentTransition()
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
             .padding(24)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .animation(LumaMotion.standard, value: selection)
+    }
+
+    @ViewBuilder
+    private var settingsContent: some View {
+        switch selection {
+        case .application:
+            applicationContent
+        case .shortcuts:
+            shortcutContent
+        case .pluginKeywords:
+            pluginContent
+        case .clipboard:
+            clipboardContent
+        case .ai:
+            AIManagementView(settings: aiSettings)
+        case .translation:
+            TranslationSettingsView(settings: translationSettings, aiSettings: aiSettings)
+        case .stocks:
+            stockContent
+        case .weather:
+            weatherContent
+        }
     }
 
     private var applicationContent: some View {

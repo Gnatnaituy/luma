@@ -899,6 +899,19 @@ final class StockStore: ObservableObject {
         chartErrorMessage = ""
     }
 
+    func move(_ symbol: String, before targetSymbol: String) {
+        guard symbol != targetSymbol,
+              let sourceIndex = records.firstIndex(where: { $0.symbol == symbol }),
+              records.contains(where: { $0.symbol == targetSymbol }) else { return }
+        let item = records.remove(at: sourceIndex)
+        guard let targetIndex = records.firstIndex(where: { $0.symbol == targetSymbol }) else {
+            records.insert(item, at: min(sourceIndex, records.count))
+            return
+        }
+        records.insert(item, at: targetIndex)
+        save()
+    }
+
     func remove(_ snapshot: StockSnapshot) {
         fundamentalsTasks[snapshot.symbol]?.cancel()
         fundamentalsTasks[snapshot.symbol] = nil
@@ -957,8 +970,11 @@ final class StockStore: ObservableObject {
             updated = snapshot
         }
         invalidateChart(for: snapshot.symbol)
-        records.removeAll { $0.symbol == snapshot.symbol }
-        records.insert(updated, at: 0)
+        if let index = records.firstIndex(where: { $0.symbol == snapshot.symbol }) {
+            records[index] = updated
+        } else {
+            records.insert(updated, at: 0)
+        }
         if records.count > 20 { records.removeLast(records.count - 20) }
         selectedSymbol = snapshot.symbol
         save()
