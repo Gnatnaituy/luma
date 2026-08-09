@@ -282,8 +282,34 @@ struct SettingsView: View {
             if !backupMessage.isEmpty {
                 Text(backupMessage).font(.caption).foregroundStyle(.secondary)
             }
+
+            Divider()
+
+            HStack(spacing: 14) {
+                Image(systemName: "info.circle")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(Color.primary)
+                    .frame(width: 34, height: 34)
+                    .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 8))
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("版本").font(.headline)
+                    Text(appVersionDescription)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+            }
         }
         .settingsCard()
+    }
+
+    private var appVersionDescription: String {
+        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? ""
+        let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? ""
+        guard !version.isEmpty else { return "未知版本" }
+        return build.isEmpty ? "v\(version)" : "v\(version)（构建 \(build)）"
     }
 
     private func exportBackup() {
