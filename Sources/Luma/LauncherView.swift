@@ -23,12 +23,7 @@ struct LauncherView: View {
             header
             if model.presentation != .search || !model.recentItems.isEmpty {
                 Divider()
-                ZStack {
-                    content
-                        .id(presentationKey)
-                        .transition(contentTransition)
-                }
-                .animation(LumaMotion.standard, value: presentationKey)
+                content
             }
         }
         .frame(minWidth: 820, maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -154,19 +149,6 @@ struct LauncherView: View {
                 displayMode: applicationSettings.recentSearchDisplayMode
             )
         }
-    }
-
-    private var presentationKey: String {
-        switch model.presentation {
-        case .search: "search"
-        case .results: "results"
-        case .plugin: "plugin:\(model.selectedPlugin?.rawValue ?? "")"
-        case .settings: "settings"
-        }
-    }
-
-    private var contentTransition: AnyTransition {
-        model.presentation == .plugin ? .identity : LumaMotion.contentTransition
     }
 
     private var headerTransition: AnyTransition {
