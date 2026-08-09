@@ -23,7 +23,12 @@ struct LauncherView: View {
             header
             if model.presentation != .search || !model.recentItems.isEmpty {
                 Divider()
-                content
+                ZStack {
+                    content
+                        .id(presentationKey)
+                        .transition(contentTransition)
+                }
+                .animation(LumaMotion.standard, value: presentationKey)
             }
         }
         .frame(minWidth: 820, maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -66,6 +71,7 @@ struct LauncherView: View {
                 }
                 .buttonStyle(LumaIconButtonStyle(size: 32, cornerRadius: 8))
                 .help("返回搜索")
+                .transition(headerTransition)
             } else {
                 Image(nsImage: NSApplication.shared.applicationIconImage)
                     .resizable()
@@ -74,6 +80,7 @@ struct LauncherView: View {
                     .frame(width: 32, height: 32)
                     .scaleEffect(1.25)
                     .accessibilityLabel("Luma")
+                    .transition(headerTransition)
             }
 
             LauncherSearchField(
@@ -107,6 +114,7 @@ struct LauncherView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
+        .animation(LumaMotion.quick, value: model.presentation)
     }
 
     @ViewBuilder
@@ -146,6 +154,25 @@ struct LauncherView: View {
                 displayMode: applicationSettings.recentSearchDisplayMode
             )
         }
+    }
+
+    private var presentationKey: String {
+        switch model.presentation {
+        case .search: "search"
+        case .results: "results"
+        case .plugin: "plugin:\(model.selectedPlugin?.rawValue ?? "")"
+        case .settings: "settings"
+        }
+    }
+
+    private var contentTransition: AnyTransition {
+        model.presentation == .plugin ? .identity : LumaMotion.contentTransition
+    }
+
+    private var headerTransition: AnyTransition {
+        model.presentation == .plugin
+            ? .identity
+            : .opacity.combined(with: .scale(scale: 0.9))
     }
 }
 
@@ -374,6 +401,7 @@ private struct SearchResultsView: View {
                             isSelected: model.selectedResult == index,
                             action: { model.activate(result) }
                         )
+                        .lumaContentTransition()
                     }
 
                     if model.searchResults.isEmpty {
@@ -399,9 +427,11 @@ private struct SearchResultsView: View {
                 }
                 .padding(10)
                 .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 10))
+                .transition(.opacity.combined(with: .move(edge: .bottom)))
             }
         }
         .padding(24)
+        .animation(LumaMotion.standard, value: model.isShowingActions)
     }
 
 }
@@ -434,6 +464,7 @@ private struct UnifiedResultRow: View {
             .contentShape(Rectangle())
             .background(isSelected ? Color.accentColor.opacity(0.12) : Color.primary.opacity(0.035))
             .clipShape(RoundedRectangle(cornerRadius: 12))
+            .animation(LumaMotion.quick, value: isSelected)
         }
         .buttonStyle(.plain)
         .contextMenu {

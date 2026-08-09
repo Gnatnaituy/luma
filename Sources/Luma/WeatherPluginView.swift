@@ -1,10 +1,12 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct WeatherPluginView: View {
     @ObservedObject var store: WeatherStore
     @State private var query = ""
     @State private var suggestions: [WeatherLocation] = []
     @State private var selectedSuggestionID: Int?
+    @State private var draggingLocationID: Int?
     @FocusState private var isQueryFocused: Bool
 
     var body: some View {
@@ -41,6 +43,7 @@ struct WeatherPluginView: View {
                         weatherSuggestionPanel
                             .padding(.horizontal, 12)
                             .offset(y: 48)
+                            .transition(.opacity.combined(with: .move(edge: .top)))
                     }
                 }
                 .zIndex(20)
@@ -52,6 +55,7 @@ struct WeatherPluginView: View {
                         .fixedSize(horizontal: false, vertical: true)
                         .padding(.horizontal, 12)
                         .padding(.bottom, 8)
+                        .transition(.opacity.combined(with: .move(edge: .top)))
                 }
 
                 if store.records.isEmpty {
@@ -64,7 +68,7 @@ struct WeatherPluginView: View {
                     ScrollView {
                         LazyVStack(spacing: 4) {
                             ForEach(store.records) { snapshot in
-                                Button { store.select(snapshot) } label: {
+                                WindowDragExclusion {
                                     WeatherListRow(snapshot: snapshot)
                                         .padding(.horizontal, 9)
                                         .padding(.vertical, 5)
@@ -76,14 +80,33 @@ struct WeatherPluginView: View {
                                                 : Color.clear,
                                             in: RoundedRectangle(cornerRadius: 8)
                                         )
+                                        .onTapGesture {
+                                            store.select(snapshot)
+                                        }
+                                        .onDrag {
+                                            draggingLocationID = snapshot.id
+                                            return NSItemProvider(object: NSString(string: String(snapshot.id)))
+                                        }
+                                        .onDrop(
+                                            of: [UTType.text],
+                                            delegate: WeatherRowDropDelegate(
+                                                targetID: snapshot.id,
+                                                draggingID: $draggingLocationID,
+                                                move: { source, target in
+                                                    store.move(source, before: target)
+                                                }
+                                            )
+                                        )
+                                        .contextMenu {
+                                            Button("移除地点", role: .destructive) { store.remove(snapshot) }
+                                        }
+                                        .accessibilityAddTraits(.isButton)
                                 }
-                                .buttonStyle(.plain)
-                                .contextMenu {
-                                    Button("移除地点", role: .destructive) { store.remove(snapshot) }
-                                }
+                                .lumaContentTransition()
                             }
                         }
                         .padding(.horizontal, 6)
+                        .animation(LumaMotion.standard, value: store.records.map(\.id))
                     }
                 }
             }
@@ -92,19 +115,25 @@ struct WeatherPluginView: View {
 
             Divider()
 
-            if let snapshot = store.selected {
-                WeatherDetailView(snapshot: snapshot, dataSource: store.dataSource, isLoading: store.isBusy) {
-                    Task { await store.refreshSelected() }
+            ZStack(alignment: .topLeading) {
+                if let snapshot = store.selected {
+                    WeatherDetailView(snapshot: snapshot, dataSource: store.dataSource, isLoading: store.isBusy) {
+                        Task { await store.refreshSelected() }
+                    }
+                    .id(snapshot.id)
+                    .lumaContentTransition()
+                } else {
+                    ContentUnavailableView(
+                        "还没有天气记录",
+                        systemImage: "cloud.sun",
+                        description: Text("从左侧添加一个地点开始")
+                    )
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .lumaContentTransition()
                 }
-                .id(snapshot.id)
-            } else {
-                ContentUnavailableView(
-                    "还没有天气记录",
-                    systemImage: "cloud.sun",
-                    description: Text("从左侧添加一个地点开始")
-                )
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .animation(LumaMotion.quick, value: store.selectedLocationID)
         }
         .onAppear { DispatchQueue.main.async { isQueryFocused = true } }
         .task(id: query) { await updateSuggestions() }
@@ -153,6 +182,7 @@ struct WeatherPluginView: View {
         .padding(4)
         .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 9))
         .overlay(RoundedRectangle(cornerRadius: 9).stroke(Color.primary.opacity(0.12)))
+        .animation(LumaMotion.quick, value: suggestions.map(\.id))
     }
 
     private func updateSuggestions() async {
@@ -190,6 +220,27 @@ struct WeatherPluginView: View {
         Task { await store.add(location) }
     }
 }
+
+private struct WeatherRowDropDelegate: DropDelegate {
+    let targetID: Int
+    @Binding var draggingID: Int?
+    let move: (Int, Int) -> Void
+
+    func dropEntered(info: DropInfo) {
+        guard let draggingID, draggingID != targetID else { return }
+        move(draggingID, targetID)
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        DropProposal(operation: .move)
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        draggingID = nil
+        return true
+    }
+}
+
 private struct WeatherListRow: View {
     let snapshot: WeatherSnapshot
 

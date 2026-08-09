@@ -28,6 +28,7 @@ struct PluginDetailView: View {
         case .code: CodePluginView(clipboard: clipboard)
         case .stocks: StocksPluginView(store: stocks)
         case .weather: WeatherPluginView(store: weather)
+        case .calendar: CalendarPluginView()
         case .quicklinks: QuicklinksPluginView(store: quicklinks)
         case .snippets: SnippetsPluginView(store: snippets, clipboard: clipboard)
         case .windows: WindowManagementPluginView(arrange: arrangeWindow)

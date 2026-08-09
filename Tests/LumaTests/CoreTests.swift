@@ -51,6 +51,12 @@ struct CoreTests {
             "calculator history persists across app launches"
         )
         try expect(Plugin.calculator.title == "计算器", "calculator uses its Chinese plugin name")
+        try expect(
+            Plugin.calendar.title == "日历"
+                && Plugin.calendar.matches("农历")
+                && Plugin.calendar.matches("holiday"),
+            "calendar plugin exposes date, lunar and holiday search keywords"
+        )
 
         let formatted = try JSONTool.format("{\"b\":2,\"a\":1}", pretty: true)
         try expect(formatted.contains("\n"), "pretty JSON")
@@ -345,6 +351,22 @@ struct CoreTests {
             points: [],
             fetchedAt: Date()
         )
+        let orderedStockStore = StockStore(
+            records: [stock, secondStock],
+            defaults: stockDefaults,
+            fetcher: { symbol in symbol.canonical == stock.symbol ? stock : secondStock }
+        )
+        orderedStockStore.move(secondStock.symbol, before: stock.symbol)
+        await orderedStockStore.query(stock.symbol)
+        try expect(
+            orderedStockStore.records.map(\.symbol) == [secondStock.symbol, stock.symbol],
+            "refreshing an existing stock keeps its manually sorted position"
+        )
+        let restoredStockOrder = StockStore(defaults: stockDefaults)
+        try expect(
+            restoredStockOrder.records.map(\.symbol) == [secondStock.symbol, stock.symbol],
+            "stock order persists after store recreation"
+        )
         var chartFetchCount = 0
         let chartStore = StockStore(
             records: [stock],
@@ -584,6 +606,22 @@ struct CoreTests {
             hourly: weather.hourly,
             daily: weather.daily,
             fetchedAt: weather.fetchedAt
+        )
+        let orderedWeatherStore = WeatherStore(
+            records: [weather, tokyoWeather],
+            defaults: weatherDefaults,
+            fetcher: { location in location.id == weather.id ? weather : tokyoWeather }
+        )
+        orderedWeatherStore.move(tokyoWeather.id, before: weather.id)
+        await orderedWeatherStore.add(weather.location)
+        try expect(
+            orderedWeatherStore.records.map(\.id) == [tokyoWeather.id, weather.id],
+            "refreshing an existing location keeps its manually sorted position"
+        )
+        let restoredWeatherOrder = WeatherStore(defaults: weatherDefaults)
+        try expect(
+            restoredWeatherOrder.records.map(\.id) == [tokyoWeather.id, weather.id],
+            "weather order persists after store recreation"
         )
         var refreshedWeatherIDs: [Int] = []
         let refreshingWeatherStore = WeatherStore(
@@ -1214,6 +1252,11 @@ struct CoreTests {
                 controlPanel.standardWindowButton($0)?.isHidden == true
             },
             "launcher hides all three title-bar window controls"
+        )
+        let rowHostingView = WindowDragExclusionHostingView(rootView: Text("row"))
+        try expect(
+            !rowHostingView.mouseDownCanMoveWindow,
+            "sortable rows cannot pass mouse-down events to the movable launcher window"
         )
         let draggedFrame = NSRect(x: 86, y: 620, width: 920, height: 58)
         windowPlacement.remember(frame: draggedFrame, visibleFrame: visibleFrame)

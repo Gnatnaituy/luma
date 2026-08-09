@@ -9,6 +9,7 @@ enum Plugin: String, CaseIterable, Identifiable {
     case code
     case stocks
     case weather
+    case calendar
     case quicklinks
     case snippets
     case windows
@@ -44,6 +45,7 @@ enum CommandCatalog {
         case .code: .init("编码小助手", "Base64、URL 编码与 SHA-256", "chevron.left.forwardslash.chevron.right", .cyan, ["base64", "url", "sha256", "encode", "decode", "编码", "解码"])
         case .stocks: .init("股票盯盘", "按代码查询公网延迟行情", "chart.xyaxis.line", .orange, ["stock", "股票", "盯盘", "行情"])
         case .weather: .init("天气", "添加地点并查看逐小时与七日预报", "cloud.sun.fill", .blue, ["weather", "天气", "气温", "预报", "城市"])
+        case .calendar: .init("日历", "查看公历、农历、节气与节假日", "calendar", .red, ["calendar", "date", "lunar", "holiday", "festival", "solar", "solar term", "农历", "节气", "节假日", "日历", "星期"])
         case .quicklinks: .init("Quicklinks", "用关键词打开网页、文件与自定义搜索", "link.badge.plus", .mint, ["quicklink", "link", "网页", "网址", "搜索"])
         case .snippets: .init("片段", "保存并快速粘贴常用文本", "text.quote", .pink, ["snippet", "片段", "短语", "模板", "粘贴"])
         case .windows: .init("窗口管理", "在当前屏幕排列与移动窗口", "macwindow.on.rectangle", .indigo, ["window", "窗口", "分屏", "布局"])
