@@ -6,7 +6,11 @@ struct WindowManagementPluginView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            Text("排列唤起 Luma 前聚焦的窗口").font(.headline)
+            Text(L10n.text(
+                "排列唤起 Luma 前聚焦的窗口",
+                "Arrange the window that was focused before opening Luma"
+            ))
+            .font(.headline)
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 180), spacing: 12)], spacing: 12) {
                 ForEach(WindowLayout.allCases) { layout in
                     Button { arrange(layout) } label: {
@@ -19,7 +23,13 @@ struct WindowManagementPluginView: View {
                     .buttonStyle(LumaTextButtonStyle())
                 }
             }
-            Label("需要“辅助功能”权限；布局应用在当前聚焦屏幕。", systemImage: "info.circle")
+            Label(
+                L10n.text(
+                    "需要“辅助功能”权限；布局应用在当前聚焦屏幕。",
+                    "Accessibility permission is required. Layouts use the currently focused display."
+                ),
+                systemImage: "info.circle"
+            )
                 .font(.caption).foregroundStyle(.secondary)
             Spacer()
         }

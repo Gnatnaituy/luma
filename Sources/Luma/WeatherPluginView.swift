@@ -13,7 +13,7 @@ struct WeatherPluginView: View {
         HStack(spacing: 0) {
             VStack(spacing: 0) {
                 HStack(spacing: 7) {
-                    TextField("上海 / Tokyo / 10001", text: $query)
+                    TextField(L10n.text("上海 / Tokyo / 10001", "Shanghai / Tokyo / 10001"), text: $query)
                         .textFieldStyle(LumaTextFieldStyle())
                         .focused($isQueryFocused)
                         .onSubmit(performQuery)
@@ -25,7 +25,7 @@ struct WeatherPluginView: View {
                     }
                     .buttonStyle(LumaIconButtonStyle())
                     .disabled(store.isBusy || query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                    .help("添加地点")
+                    .help(L10n.text("添加地点", "Add Location"))
 
                     if !store.records.isEmpty {
                         Button { Task { await store.refreshAll() } } label: {
@@ -34,7 +34,9 @@ struct WeatherPluginView: View {
                         }
                         .buttonStyle(LumaIconButtonStyle())
                         .disabled(store.isBusy)
-                        .help(store.isRefreshingAll ? "正在全部刷新" : "全部刷新")
+                        .help(store.isRefreshingAll
+                            ? L10n.text("正在全部刷新", "Refreshing All")
+                            : L10n.text("全部刷新", "Refresh All"))
                     }
                 }
                 .padding(12)
@@ -60,9 +62,12 @@ struct WeatherPluginView: View {
 
                 if store.records.isEmpty {
                     ContentUnavailableView(
-                        "添加地点",
+                        L10n.text("添加地点", "Add a Location"),
                         systemImage: "location.badge.plus",
-                        description: Text("输入城市、地区或邮政编码")
+                        description: Text(L10n.text(
+                            "输入城市、地区或邮政编码",
+                            "Enter a city, region, or postal code"
+                        ))
                     )
                 } else {
                     ScrollView {
@@ -98,7 +103,9 @@ struct WeatherPluginView: View {
                                             )
                                         )
                                         .contextMenu {
-                                            Button("移除地点", role: .destructive) { store.remove(snapshot) }
+                                            Button(L10n.text("移除地点", "Remove Location"), role: .destructive) {
+                                                store.remove(snapshot)
+                                            }
                                         }
                                         .accessibilityAddTraits(.isButton)
                                 }
@@ -124,9 +131,12 @@ struct WeatherPluginView: View {
                     .lumaContentTransition()
                 } else {
                     ContentUnavailableView(
-                        "还没有天气记录",
+                        L10n.text("还没有天气记录", "No Weather Records"),
                         systemImage: "cloud.sun",
-                        description: Text("从左侧添加一个地点开始")
+                        description: Text(L10n.text(
+                            "从左侧添加一个地点开始",
+                            "Add a location from the left to get started"
+                        ))
                     )
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .lumaContentTransition()
@@ -332,11 +342,11 @@ private struct WeatherDetailView: View {
 
     private var metricGrid: some View {
         LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 4), spacing: 8) {
-            WeatherMetric(title: "体感", value: String(format: "%.0f°", snapshot.current.apparentTemperature), symbol: "thermometer.medium")
-            WeatherMetric(title: "湿度", value: "\(snapshot.current.humidity)%", symbol: "humidity.fill")
-            WeatherMetric(title: "降水", value: String(format: "%.1f mm", snapshot.current.precipitation), symbol: "drop.fill")
+            WeatherMetric(title: L10n.text("体感", "Feels Like"), value: String(format: "%.0f°", snapshot.current.apparentTemperature), symbol: "thermometer.medium")
+            WeatherMetric(title: L10n.text("湿度", "Humidity"), value: "\(snapshot.current.humidity)%", symbol: "humidity.fill")
+            WeatherMetric(title: L10n.text("降水", "Precipitation"), value: String(format: "%.1f mm", snapshot.current.precipitation), symbol: "drop.fill")
             WeatherMetric(
-                title: "风",
+                title: L10n.text("风", "Wind"),
                 value: "\(WeatherCondition.windDirection(snapshot.current.windDirection)) \(String(format: "%.0f", snapshot.current.windSpeed)) km/h",
                 symbol: "wind"
             )
@@ -345,9 +355,16 @@ private struct WeatherDetailView: View {
 
     private var hourlyForecast: some View {
         VStack(alignment: .leading, spacing: 9) {
-            Text("未来 24 小时").font(.subheadline.weight(.semibold))
+            Text(L10n.text("未来 24 小时", "Next 24 Hours"))
+                .font(.subheadline.weight(.semibold))
             if snapshot.hourly.isEmpty {
-                Label("当前数据源暂无逐小时预报", systemImage: "clock.badge.questionmark")
+                Label(
+                    L10n.text(
+                        "当前数据源暂无逐小时预报",
+                        "Hourly forecasts are unavailable from this source"
+                    ),
+                    systemImage: "clock.badge.questionmark"
+                )
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, minHeight: 62)
@@ -382,10 +399,11 @@ private struct WeatherDetailView: View {
 
     private var dailyForecast: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("未来 7 天").font(.subheadline.weight(.semibold))
+            Text(L10n.text("未来 7 天", "Next 7 Days"))
+                .font(.subheadline.weight(.semibold))
             ForEach(Array(snapshot.daily.enumerated()), id: \.element.id) { index, day in
                 HStack(spacing: 10) {
-                    Text(index == 0 ? "今天" : weekday(day.date))
+                    Text(index == 0 ? L10n.text("今天", "Today") : weekday(day.date))
                         .font(.caption.weight(.medium))
                         .frame(width: 38, alignment: .leading)
                     Image(systemName: WeatherCondition.symbol(for: day.weatherCode))
@@ -413,17 +431,23 @@ private struct WeatherDetailView: View {
         VStack(alignment: .leading, spacing: 7) {
             HStack(spacing: 8) {
                 Image(systemName: "clock")
-                Text("本地刷新 \(snapshot.fetchedAt.formatted(date: .omitted, time: .shortened))")
+                Text(L10n.text(
+                    "本地刷新 \(snapshot.fetchedAt.formatted(date: .omitted, time: .shortened))",
+                    "Updated \(snapshot.fetchedAt.formatted(date: .omitted, time: .shortened))"
+                ))
                 Spacer()
                 Text(dataSource.title)
                 Button(action: refresh) {
                     if isLoading { ProgressView().controlSize(.small) }
-                    else { Label("刷新", systemImage: "arrow.clockwise") }
+                    else { Label(L10n.text("刷新", "Refresh"), systemImage: "arrow.clockwise") }
                 }
                 .buttonStyle(LumaTextButtonStyle())
                 .disabled(isLoading)
             }
-            Text("天气数据仅在新增地点或手动刷新时请求。")
+            Text(L10n.text(
+                "天气数据仅在新增地点或手动刷新时请求。",
+                "Weather data is requested only when adding a location or refreshing manually."
+            ))
         }
         .font(.caption2)
         .foregroundStyle(.secondary)
@@ -436,7 +460,7 @@ private struct WeatherDetailView: View {
 
     private func weekday(_ value: String) -> String {
         let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "zh_CN")
+        formatter.locale = L10n.locale
         formatter.dateFormat = "yyyy-MM-dd"
         guard let date = formatter.date(from: value) else { return String(value.suffix(5)) }
         formatter.dateFormat = "EEE"

@@ -36,6 +36,8 @@ struct LumaTextButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.system(size: 13, weight: .semibold))
+            .lineLimit(1)
+            .fixedSize(horizontal: true, vertical: false)
             .padding(.horizontal, 12)
             .frame(minHeight: height)
             .foregroundStyle(foregroundColor)
@@ -95,6 +97,8 @@ struct LumaSelectionButton: View {
                 systemImage: isSelected ? "checkmark.circle.fill" : "circle"
             )
             .font(.system(size: 13, weight: .semibold))
+            .lineLimit(1)
+            .fixedSize(horizontal: true, vertical: false)
             .foregroundStyle(isSelected ? Color.accentColor : Color.primary)
             .padding(.horizontal, 12)
             .frame(maxWidth: .infinity, minHeight: 32, alignment: .leading)
@@ -109,13 +113,83 @@ struct LumaSelectionButton: View {
     }
 }
 
+struct LumaFlowLayout: Layout {
+    var horizontalSpacing: CGFloat = 8
+    var verticalSpacing: CGFloat = 8
+
+    func sizeThatFits(
+        proposal: ProposedViewSize,
+        subviews: Subviews,
+        cache: inout ()
+    ) -> CGSize {
+        let result = layout(
+            subviews: subviews,
+            maxWidth: proposal.width ?? .infinity
+        )
+        return CGSize(
+            width: proposal.width ?? result.size.width,
+            height: result.size.height
+        )
+    }
+
+    func placeSubviews(
+        in bounds: CGRect,
+        proposal: ProposedViewSize,
+        subviews: Subviews,
+        cache: inout ()
+    ) {
+        let result = layout(subviews: subviews, maxWidth: bounds.width)
+        for (index, item) in result.items.enumerated() {
+            subviews[index].place(
+                at: CGPoint(
+                    x: bounds.minX + item.origin.x,
+                    y: bounds.minY + item.origin.y
+                ),
+                proposal: ProposedViewSize(item.size)
+            )
+        }
+    }
+
+    private func layout(
+        subviews: Subviews,
+        maxWidth: CGFloat
+    ) -> (items: [(origin: CGPoint, size: CGSize)], size: CGSize) {
+        var items: [(origin: CGPoint, size: CGSize)] = []
+        var x: CGFloat = 0
+        var y: CGFloat = 0
+        var rowHeight: CGFloat = 0
+        var contentWidth: CGFloat = 0
+
+        for subview in subviews {
+            let size = subview.sizeThatFits(.unspecified)
+            if x > 0, x + size.width > maxWidth {
+                x = 0
+                y += rowHeight + verticalSpacing
+                rowHeight = 0
+            }
+
+            items.append((CGPoint(x: x, y: y), size))
+            contentWidth = max(contentWidth, x + size.width)
+            rowHeight = max(rowHeight, size.height)
+            x += size.width + horizontalSpacing
+        }
+
+        return (
+            items,
+            CGSize(width: contentWidth, height: items.isEmpty ? 0 : y + rowHeight)
+        )
+    }
+}
+
 struct LumaMenuPicker<Value: Hashable>: View {
     @Binding var selection: Value
     let values: [Value]
     let title: (Value) -> String
 
     private var selectedTitle: String {
-        guard let value = values.first(where: { $0 == selection }) else { return "请选择" }
+        guard let value = values.first(where: { $0 == selection }) else {
+            return L10n.text("请选择", "Select")
+        }
         return title(value)
     }
 
@@ -169,6 +243,8 @@ struct LumaToggleStyle: ToggleStyle {
                 configuration.label
             }
             .font(.system(size: 13, weight: .semibold))
+            .lineLimit(1)
+            .fixedSize(horizontal: true, vertical: false)
             .foregroundStyle(configuration.isOn ? Color.accentColor : Color.primary)
             .padding(.horizontal, 11)
             .frame(minHeight: 30)

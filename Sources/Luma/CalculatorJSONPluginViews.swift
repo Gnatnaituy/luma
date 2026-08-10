@@ -73,7 +73,7 @@ struct CalculatorPluginView: View {
                 }
                 .focused($isExpressionFocused)
                 .onSubmit(calculate)
-                .accessibilityLabel("计算表达式")
+                .accessibilityLabel(L10n.text("计算表达式", "Calculate Expression"))
 
             if let errorMessage {
                 Label(errorMessage, systemImage: "exclamationmark.triangle")
@@ -105,7 +105,10 @@ struct CalculatorPluginView: View {
 
             Spacer(minLength: 0)
 
-            Text("支持 + − × ÷ % ^、括号，以及 sqrt / sin / cos / tan / abs / log / ln。")
+            Text(L10n.text(
+                "支持 + − × ÷ % ^、括号，以及 sqrt / sin / cos / tan / abs / log / ln。",
+                "Supports + − × ÷ % ^, parentheses, and sqrt / sin / cos / tan / abs / log / ln."
+            ))
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
@@ -143,15 +146,15 @@ struct JSONPluginView: View {
                     .font(.caption)
                     .foregroundStyle(message.hasPrefix("✓") ? .green : .orange)
                 Spacer()
-                Button("压缩") { transform(pretty: false) }
+                Button(L10n.text("压缩", "Minify")) { transform(pretty: false) }
                     .buttonStyle(LumaTextButtonStyle())
-                Button("转义") { escape() }
+                Button(L10n.text("转义", "Escape")) { escape() }
                     .buttonStyle(LumaTextButtonStyle())
-                Button("去转义") { unescape() }
+                Button(L10n.text("去转义", "Unescape")) { unescape() }
                     .buttonStyle(LumaTextButtonStyle())
-                Button("复制") { clipboard.copy(input) }
+                Button(L10n.text("复制", "Copy")) { clipboard.copy(input) }
                     .buttonStyle(LumaTextButtonStyle())
-                Button("格式化") { transform(pretty: true) }
+                Button(L10n.text("格式化", "Format")) { transform(pretty: true) }
                     .buttonStyle(LumaTextButtonStyle(emphasis: .primary))
             }
         }
@@ -161,7 +164,7 @@ struct JSONPluginView: View {
     private func transform(pretty: Bool) {
         do {
             input = try JSONTool.format(input, pretty: pretty)
-            message = "✓ JSON 有效"
+            message = L10n.text("✓ JSON 有效", "✓ Valid JSON")
         } catch {
             message = error.localizedDescription
         }
@@ -170,7 +173,7 @@ struct JSONPluginView: View {
     private func escape() {
         do {
             input = try JSONTool.escape(input)
-            message = "✓ 已转义"
+            message = L10n.text("✓ 已转义", "✓ Escaped")
         } catch {
             message = error.localizedDescription
         }
@@ -179,7 +182,7 @@ struct JSONPluginView: View {
     private func unescape() {
         do {
             input = try JSONTool.unescape(input)
-            message = "✓ 已去转义"
+            message = L10n.text("✓ 已去转义", "✓ Unescaped")
         } catch {
             message = error.localizedDescription
         }

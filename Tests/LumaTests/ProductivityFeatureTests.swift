@@ -16,10 +16,12 @@ struct ProductivityFeatureTests {
             target.removePersistentDomain(forName: targetName)
         }
         source.set(true, forKey: "Luma.showsStatusBarIcon")
+        source.set(AppLanguage.english.rawValue, forKey: AppLanguage.storageKey)
         source.set("secret", forKey: "app.luma.launcher.ai-provider")
         let data = try SettingsBackup.export(defaults: source)
         try SettingsBackup.restore(data, defaults: target)
         #expect(target.bool(forKey: "Luma.showsStatusBarIcon"))
+        #expect(target.string(forKey: AppLanguage.storageKey) == AppLanguage.english.rawValue)
         #expect(target.object(forKey: "app.luma.launcher.ai-provider") == nil)
     }
 }

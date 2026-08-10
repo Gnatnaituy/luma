@@ -75,7 +75,12 @@ enum WindowLayout: String, CaseIterable, Identifiable {
     case left, right, maximize, center
     var id: String { rawValue }
     var title: String {
-        switch self { case .left: "左半屏"; case .right: "右半屏"; case .maximize: "最大化"; case .center: "居中" }
+        switch self {
+        case .left: L10n.text("左半屏", "Left Half")
+        case .right: L10n.text("右半屏", "Right Half")
+        case .maximize: L10n.text("最大化", "Maximize")
+        case .center: L10n.text("居中", "Center")
+        }
     }
     var symbol: String {
         switch self { case .left: "rectangle.lefthalf.filled"; case .right: "rectangle.righthalf.filled"; case .maximize: "rectangle.inset.filled"; case .center: "rectangle.center.inset.filled" }
@@ -97,7 +102,7 @@ struct LumaBackup: Codable {
 
 enum SettingsBackup {
     static let supportedKeys = [
-        "Luma.showsStatusBarIcon", "Luma.recentSearchDisplayMode",
+        "Luma.showsStatusBarIcon", "Luma.recentSearchDisplayMode", AppLanguage.storageKey,
         "Luma.globalShortcut", "Luma.keywordShortcuts", "Luma.pluginConfigurations",
         "Luma.recentUsage.v1",
         "luma.stock.query-records.v1", "luma.stock.color-theme.v1", "luma.stock.data-source.v1",

@@ -1,6 +1,19 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
+private func localizedStockMarket(_ value: String) -> String {
+    guard L10n.language == .english else { return value }
+    return switch value {
+    case "上海": "Shanghai"
+    case "深圳": "Shenzhen"
+    case "香港", "港股": "Hong Kong"
+    case "美国", "美股": "U.S."
+    case "沪A": "Shanghai A"
+    case "深A": "Shenzhen A"
+    default: value
+    }
+}
+
 struct StocksPluginView: View {
     @ObservedObject var store: StockStore
     @State private var query = ""
@@ -13,7 +26,7 @@ struct StocksPluginView: View {
         HStack(spacing: 0) {
             VStack(spacing: 0) {
                 HStack(spacing: 7) {
-                    TextField("代码或名称", text: $query)
+                    TextField(L10n.text("代码或名称", "Symbol or Name"), text: $query)
                         .textFieldStyle(LumaTextFieldStyle())
                         .focused($isQueryFocused)
                         .onSubmit { performQuery() }
@@ -37,7 +50,9 @@ struct StocksPluginView: View {
                         }
                         .buttonStyle(LumaIconButtonStyle())
                         .disabled(store.isBusy)
-                        .help(store.isRefreshingAll ? "正在全部刷新" : "全部刷新")
+                        .help(store.isRefreshingAll
+                            ? L10n.text("正在全部刷新", "Refreshing All")
+                            : L10n.text("全部刷新", "Refresh All"))
                     }
                 }
                 .padding(12)
@@ -62,7 +77,14 @@ struct StocksPluginView: View {
                 }
 
                 if store.records.isEmpty {
-                    ContentUnavailableView("添加股票", systemImage: "plus.circle", description: Text("输入股票代码或名称搜索"))
+                    ContentUnavailableView(
+                        L10n.text("添加股票", "Add a Stock"),
+                        systemImage: "plus.circle",
+                        description: Text(L10n.text(
+                            "输入股票代码或名称搜索",
+                            "Search by stock symbol or name"
+                        ))
+                    )
                 } else {
                     ScrollView {
                         LazyVStack(spacing: 4) {
@@ -95,7 +117,9 @@ struct StocksPluginView: View {
                                             )
                                         )
                                         .contextMenu {
-                                            Button("移除记录", role: .destructive) { store.remove(stock) }
+                                            Button(L10n.text("移除记录", "Remove"), role: .destructive) {
+                                                store.remove(stock)
+                                            }
                                         }
                                         .accessibilityAddTraits(.isButton)
                                 }
@@ -129,7 +153,14 @@ struct StocksPluginView: View {
                     .id(stock.symbol)
                     .lumaContentTransition()
                 } else {
-                    ContentUnavailableView("还没有行情记录", systemImage: "chart.line.uptrend.xyaxis", description: Text("支持 A 股、港股和美股代码"))
+                    ContentUnavailableView(
+                        L10n.text("还没有行情记录", "No Market Records"),
+                        systemImage: "chart.line.uptrend.xyaxis",
+                        description: Text(L10n.text(
+                            "支持 A 股、港股和美股代码",
+                            "Supports mainland China, Hong Kong, and U.S. symbols"
+                        ))
+                    )
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .lumaContentTransition()
                 }
@@ -163,7 +194,7 @@ struct StocksPluginView: View {
                             .frame(width: 18)
                         VStack(alignment: .leading, spacing: 2) {
                             Text(suggestion.name).font(.caption.weight(.semibold)).lineLimit(1)
-                            Text("\(suggestion.symbol) · \(suggestion.market)")
+                            Text("\(suggestion.symbol) · \(localizedStockMarket(suggestion.market))")
                                 .font(.system(.caption2, design: .monospaced))
                                 .foregroundStyle(.secondary)
                                 .lineLimit(1)
@@ -302,7 +333,7 @@ private struct StockDetailView: View {
                         HStack(spacing: 6) {
                             Text(stock.symbol)
                                 .font(.system(.caption, design: .monospaced).weight(.semibold))
-                            Text(stock.marketName)
+                            Text(localizedStockMarket(stock.marketName))
                             Text(stock.currency)
                         }
                         .font(.caption2)
@@ -320,13 +351,20 @@ private struct StockDetailView: View {
 
                 VStack(alignment: .leading, spacing: 9) {
                     HStack {
-                        Text("\(selectedPeriod.title)走势").font(.subheadline.weight(.semibold))
-                        Text("\(points.count) 个数据点")
+                        Text(L10n.text(
+                            "\(selectedPeriod.title)走势",
+                            "\(selectedPeriod.title) Chart"
+                        ))
+                        .font(.subheadline.weight(.semibold))
+                        Text(L10n.text("\(points.count) 个数据点", "\(points.count) points"))
                             .font(.caption2)
                             .foregroundStyle(.secondary)
                         Spacer()
                         if let change = periodChangePercent {
-                            Text("区间 \(String(format: "%+.2f%%", change))")
+                            Text(L10n.text(
+                                "区间 \(String(format: "%+.2f%%", change))",
+                                "Period \(String(format: "%+.2f%%", change))"
+                            ))
                                 .font(.system(.caption, design: .monospaced).weight(.semibold))
                                 .foregroundStyle(colorTheme.color(isRising: change >= 0))
                         }
@@ -369,7 +407,10 @@ private struct StockDetailView: View {
                             Text(chartDate(first.date))
                             Spacer()
                             if let low = periodLow, let high = periodHigh {
-                                Text("低 \(formatPrice(low))  ·  高 \(formatPrice(high))")
+                                Text(L10n.text(
+                                    "低 \(formatPrice(low))  ·  高 \(formatPrice(high))",
+                                    "Low \(formatPrice(low))  ·  High \(formatPrice(high))"
+                                ))
                             }
                             Spacer()
                             Text(chartDate(last.date))
@@ -384,44 +425,49 @@ private struct StockDetailView: View {
                 StockDayRange(stock: stock, colorTheme: colorTheme)
 
                 LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 4), spacing: 8) {
-                    StockMetric(title: "今开", value: stock.open)
-                    StockMetric(title: "最高", value: stock.high)
-                    StockMetric(title: "最低", value: stock.low)
-                    StockMetric(title: "昨收", value: stock.previousClose)
-                    StockMetric(title: "成交量", text: stock.volume.formatted(.number.notation(.compactName)))
-                    StockMetric(title: "振幅", text: String(format: "%.2f%%", stock.amplitudePercent))
-                    StockMetric(title: "开盘涨跌", text: String(format: "%+.2f%%", stock.openChangePercent))
+                    StockMetric(title: L10n.text("今开", "Open"), value: stock.open)
+                    StockMetric(title: L10n.text("最高", "High"), value: stock.high)
+                    StockMetric(title: L10n.text("最低", "Low"), value: stock.low)
+                    StockMetric(title: L10n.text("昨收", "Prev. Close"), value: stock.previousClose)
+                    StockMetric(title: L10n.text("成交量", "Volume"), text: stock.volume.formatted(.number.notation(.compactName)))
+                    StockMetric(title: L10n.text("振幅", "Amplitude"), text: String(format: "%.2f%%", stock.amplitudePercent))
+                    StockMetric(title: L10n.text("开盘涨跌", "Open Change"), text: String(format: "%+.2f%%", stock.openChangePercent))
                     StockMetric(
-                        title: "区间涨跌",
+                        title: L10n.text("区间涨跌", "Period Change"),
                         text: periodChangePercent.map { String(format: "%+.2f%%", $0) } ?? "—"
                     )
                     StockMetric(
-                        title: "总值",
+                        title: L10n.text("总值", "Market Cap"),
                         text: formatMarketValue(stock.totalMarketValue, currency: stock.currency)
                     )
                     StockMetric(
-                        title: "流值",
+                        title: L10n.text("流值", "Float Cap"),
                         text: formatMarketValue(stock.circulatingMarketValue, currency: stock.currency)
                     )
                     StockMetric(
-                        title: "市盈",
+                        title: L10n.text("市盈", "P/E"),
                         text: stock.priceEarningsRatio.map { String(format: "%.2f", $0) } ?? "—"
                     )
-                    StockMetric(title: "行业", text: stock.industry ?? "—")
+                    StockMetric(title: L10n.text("行业", "Industry"), text: stock.industry ?? "—")
                 }
 
                 HStack(spacing: 8) {
                     Image(systemName: "clock")
-                    Text(stock.quoteTime.isEmpty ? "行情时间 —" : "行情时间 \(stock.quoteTime)")
+                    Text(stock.quoteTime.isEmpty
+                        ? L10n.text("行情时间 —", "Quote time —")
+                        : L10n.text("行情时间 \(stock.quoteTime)", "Quote time \(stock.quoteTime)"))
                     Text("·")
-                    Text("本地刷新 \(stock.fetchedAt.formatted(date: .omitted, time: .shortened))")
+                    Text(L10n.text(
+                        "本地刷新 \(stock.fetchedAt.formatted(date: .omitted, time: .shortened))",
+                        "Updated \(stock.fetchedAt.formatted(date: .omitted, time: .shortened))"
+                    ))
                     Spacer()
                     Text(store.dataSource.title)
                     Button(action: refresh) {
                         if store.isBusy || store.isLoadingChart {
                             ProgressView().controlSize(.small)
                         } else {
-                            Label("刷新", systemImage: "arrow.clockwise")
+                            Label(L10n.text("刷新", "Refresh"), systemImage: "arrow.clockwise")
                         }
                     }
                     .buttonStyle(LumaTextButtonStyle())
@@ -430,7 +476,10 @@ private struct StockDetailView: View {
                 .font(.caption2)
                 .foregroundStyle(.secondary)
 
-                Text("行情数据仅在新增股票或手动刷新时请求。")
+                Text(L10n.text(
+                    "行情数据仅在新增股票或手动刷新时请求。",
+                    "Market data is requested only when adding a stock or refreshing manually."
+                ))
                         .font(.caption2)
                         .foregroundStyle(.secondary)
             }
@@ -460,6 +509,21 @@ private struct StockDetailView: View {
         case "HKD": prefix = "HK$"
         case "USD": prefix = "$"
         default: prefix = ""
+        }
+        if L10n.language == .english {
+            if value >= 1_000_000_000_000 {
+                return "\(prefix)\(String(format: "%.2f", value / 1_000_000_000_000))T"
+            }
+            if value >= 1_000_000_000 {
+                return "\(prefix)\(String(format: "%.2f", value / 1_000_000_000))B"
+            }
+            if value >= 1_000_000 {
+                return "\(prefix)\(String(format: "%.2f", value / 1_000_000))M"
+            }
+            if value >= 1_000 {
+                return "\(prefix)\(String(format: "%.2f", value / 1_000))K"
+            }
+            return "\(prefix)\(value.formatted(.number.precision(.fractionLength(0...2))))"
         }
         if value >= 1_000_000_000_000 {
             return "\(prefix)\(String(format: "%.2f", value / 1_000_000_000_000))万亿"
@@ -509,7 +573,8 @@ private struct StockDayRange: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text("日内位置").font(.subheadline.weight(.semibold))
+                Text(L10n.text("日内位置", "Day Range Position"))
+                    .font(.subheadline.weight(.semibold))
                 Spacer()
                 Text(stock.dayPosition.map { String(format: "%.0f%%", $0 * 100) } ?? "—")
                     .font(.system(.caption, design: .monospaced).weight(.semibold))
@@ -531,11 +596,11 @@ private struct StockDayRange: View {
             }
             .frame(height: 10)
             HStack {
-                Text("最低 \(formatPrice(stock.low))")
+                Text(L10n.text("最低 \(formatPrice(stock.low))", "Low \(formatPrice(stock.low))"))
                 Spacer()
-                Text("现价 \(formatPrice(stock.price))")
+                Text(L10n.text("现价 \(formatPrice(stock.price))", "Current \(formatPrice(stock.price))"))
                 Spacer()
-                Text("最高 \(formatPrice(stock.high))")
+                Text(L10n.text("最高 \(formatPrice(stock.high))", "High \(formatPrice(stock.high))"))
             }
             .font(.caption2)
             .foregroundStyle(.secondary)
@@ -583,7 +648,10 @@ private struct StockChart: View {
     var body: some View {
         GeometryReader { geometry in
             if points.count < 2 {
-                ContentUnavailableView("暂无走势数据", systemImage: "chart.xyaxis.line")
+                ContentUnavailableView(
+                    L10n.text("暂无走势数据", "No Chart Data"),
+                    systemImage: "chart.xyaxis.line"
+                )
             } else {
                 let renderPoints = period.isCandlestick
                     ? points

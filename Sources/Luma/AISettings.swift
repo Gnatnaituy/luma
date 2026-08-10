@@ -154,7 +154,7 @@ final class AISettings: ObservableObject {
     func addProvider() -> UUID {
         let provider = AIProviderConfiguration(
             id: UUID(),
-            name: "新供应商",
+            name: L10n.text("新供应商", "New Provider"),
             baseURL: "https://api.example.com/v1",
             apiFormat: .openAIChatCompletions,
             isEnabled: false,
@@ -243,7 +243,11 @@ enum TranslationBackend: String, CaseIterable, Codable, Identifiable {
     case ai
 
     var id: String { rawValue }
-    var title: String { self == .apple ? "Apple 系统翻译" : "AI 模型翻译" }
+    var title: String {
+        self == .apple
+            ? L10n.text("Apple 系统翻译", "Apple Translation")
+            : L10n.text("AI 模型翻译", "AI Model")
+    }
 }
 
 final class TranslationSettings: ObservableObject {

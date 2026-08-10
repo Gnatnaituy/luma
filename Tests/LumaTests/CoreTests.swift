@@ -840,8 +840,10 @@ struct CoreTests {
             "translation ignores non-text clipboard payloads"
         )
         try expect(
-            SettingsSection.allCases.map(\.title) == ["应用设置", "快捷键管理", "插件关键词管理", "剪贴板设置", "AI 管理", "翻译设置", "股票设置", "天气设置"],
-            "application settings leads the settings navigation"
+            SettingsCategory.allCases.map(\.title) == ["应用设置", "插件设置"]
+                && SettingsCategory.application.sections.map(\.title) == ["通用设置", "快捷键管理"]
+                && SettingsCategory.plugins.sections.map(\.title) == ["插件管理", "剪贴板设置", "AI 管理", "翻译设置", "股票设置", "天气设置"],
+            "settings navigation groups application and plugin configuration"
         )
         let applicationSuiteName = "app.luma.application-tests." + UUID().uuidString
         let applicationDefaults = UserDefaults(suiteName: applicationSuiteName)!
@@ -866,6 +868,14 @@ struct CoreTests {
         try expect(
             restoredApplicationSettings.recentSearchDisplayMode == .horizontal,
             "recent search display mode persists"
+        )
+        try expect(
+            AppLanguage.allCases.map(\.title) == ["中文", "English"]
+                && AppLanguage.simplifiedChinese.locale.identifier == "zh-Hans"
+                && AppLanguage.english.locale.identifier == "en"
+                && L10n.text("剪贴板", "Clipboard", language: .simplifiedChinese) == "剪贴板"
+                && L10n.text("剪贴板", "Clipboard", language: .english) == "Clipboard",
+            "language options map to stable locales and localized content"
         )
         try expect(
             LumaStatusIcon.image.isTemplate && LumaStatusIcon.image.size == NSSize(width: 18, height: 18),

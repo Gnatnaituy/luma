@@ -10,10 +10,10 @@ enum ClipboardKind: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .text: "文本"
-        case .image: "图片"
-        case .file: "文件"
-        case .link: "链接"
+        case .text: L10n.text("文本", "Text")
+        case .image: L10n.text("图片", "Image")
+        case .file: L10n.text("文件", "File")
+        case .link: L10n.text("链接", "Link")
         }
     }
 
@@ -39,12 +39,12 @@ enum ClipboardFilter: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .all: "全部"
-        case .favorites: "收藏"
-        case .text: "文本"
-        case .image: "图片"
-        case .file: "文件"
-        case .link: "链接"
+        case .all: L10n.text("全部", "All")
+        case .favorites: L10n.text("收藏", "Favorites")
+        case .text: L10n.text("文本", "Text")
+        case .image: L10n.text("图片", "Images")
+        case .file: L10n.text("文件", "Files")
+        case .link: L10n.text("链接", "Links")
         }
     }
 }
@@ -81,10 +81,17 @@ struct ClipboardEntry: Identifiable, Equatable {
     var title: String {
         switch payload {
         case .text(let value): return value
-        case .image: return "剪贴板图片"
+        case .image: return L10n.text("剪贴板图片", "Clipboard Image")
         case .files(let urls):
             if urls.count == 1 { return urls[0].lastPathComponent }
-            return urls[0].lastPathComponent + " 等 " + String(urls.count) + " 个文件"
+            let additionalFileCount = urls.count - 1
+            let englishSuffix = additionalFileCount == 1
+                ? "1 more file"
+                : "\(additionalFileCount) more files"
+            return L10n.text(
+                urls[0].lastPathComponent + " 等 " + String(urls.count) + " 个文件",
+                urls[0].lastPathComponent + " and " + englishSuffix
+            )
         case .link(let url): return url.absoluteString
         }
     }
@@ -114,7 +121,7 @@ struct ClipboardEntry: Identifiable, Equatable {
             payloadText = url.absoluteString
         }
 
-        let searchableText = [payloadText, kind.title, isFavorite ? "收藏" : ""]
+        let searchableText = [payloadText, kind.title, isFavorite ? "收藏 favorite" : ""]
             .joined(separator: " ")
         return terms.allSatisfy(searchableText.localizedCaseInsensitiveContains)
     }

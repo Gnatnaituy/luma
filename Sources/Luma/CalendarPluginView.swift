@@ -6,8 +6,8 @@ private enum LumaCalendarViewMode: String, CaseIterable {
 
     var title: String {
         switch self {
-        case .month: "月"
-        case .year: "年"
+        case .month: L10n.text("月", "Month")
+        case .year: L10n.text("年", "Year")
         }
     }
 }
@@ -73,7 +73,10 @@ struct CalendarPluginView: View {
                     ? LumaCalendarData.monthTitle(for: displayedMonth)
                     : LumaCalendarData.yearTitle(for: displayedMonth))
                     .font(.title2.weight(.bold))
-                Text("公历 · 农历 · 节气 · 节假日")
+                Text(L10n.text(
+                    "公历 · 农历 · 节气 · 节假日",
+                    "Solar · Lunar · Solar Terms · Holidays"
+                ))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -87,14 +90,14 @@ struct CalendarPluginView: View {
             }
             .pickerStyle(.segmented)
             .frame(width: 86)
-            .help("切换月视图或年视图")
+            .help(L10n.text("切换月视图或年视图", "Switch between month and year views"))
 
             Button {
                 let today = LumaCalendarData.startOfDay(Date())
                 displayedMonth = LumaCalendarData.startOfMonth(today)
                 selectedDate = today
             } label: {
-                Text("今天")
+                Text(L10n.text("今天", "Today"))
             }
             .buttonStyle(LumaTextButtonStyle(emphasis: .primary, height: 30))
 
@@ -106,7 +109,9 @@ struct CalendarPluginView: View {
                 Image(systemName: "chevron.left")
             }
             .buttonStyle(LumaIconButtonStyle(size: 30))
-            .help(viewMode == .month ? "上个月" : "上一年")
+            .help(viewMode == .month
+                ? L10n.text("上个月", "Previous Month")
+                : L10n.text("上一年", "Previous Year"))
 
             Button {
                 displayedMonth = viewMode == .month
@@ -116,7 +121,9 @@ struct CalendarPluginView: View {
                 Image(systemName: "chevron.right")
             }
             .buttonStyle(LumaIconButtonStyle(size: 30))
-            .help(viewMode == .month ? "下个月" : "下一年")
+            .help(viewMode == .month
+                ? L10n.text("下个月", "Next Month")
+                : L10n.text("下一年", "Next Year"))
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 12)
@@ -127,10 +134,10 @@ struct CalendarPluginView: View {
     private var calendarGrid: some View {
         VStack(spacing: 8) {
             LazyVGrid(columns: columns, spacing: 5) {
-                ForEach(LumaCalendarData.weekdaySymbols, id: \.self) { weekday in
+                ForEach(Array(LumaCalendarData.weekdaySymbols.enumerated()), id: \.offset) { index, weekday in
                     Text(weekday)
                         .font(.caption.weight(.semibold))
-                        .foregroundStyle(weekday == "六" || weekday == "日" ? .orange : .secondary)
+                        .foregroundStyle(index >= 5 ? .orange : .secondary)
                         .frame(maxWidth: .infinity, minHeight: 20)
                 }
             }
@@ -150,10 +157,10 @@ struct CalendarPluginView: View {
             }
 
             HStack(spacing: 14) {
-                legend(color: .accentColor, title: "今天")
-                legend(color: .green, title: "节气")
-                legend(color: .red, title: "节假日")
-                legend(color: .orange, title: "调休上班")
+                legend(color: .accentColor, title: L10n.text("今天", "Today"))
+                legend(color: .green, title: L10n.text("节气", "Solar Term"))
+                legend(color: .red, title: L10n.text("节假日", "Holiday"))
+                legend(color: .orange, title: L10n.text("调休上班", "Make-up Workday"))
                 Spacer()
             }
             .font(.caption2)
@@ -195,7 +202,7 @@ struct CalendarPluginView: View {
 
     private var selectedDaySummary: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("日期详情")
+            Text(L10n.text("日期详情", "Date Details"))
                 .font(.headline)
 
             VStack(alignment: .leading, spacing: 3) {
@@ -209,21 +216,40 @@ struct CalendarPluginView: View {
 
             Divider()
 
-            detailRow(icon: "moon.stars.fill", title: "农历", value: selectedDay.lunarText, color: .indigo)
+            detailRow(
+                icon: "moon.stars.fill",
+                title: L10n.text("农历", "Lunar"),
+                value: selectedDay.lunarText,
+                color: .indigo
+            )
 
             if let solarTerm = selectedDay.solarTerm {
-                detailRow(icon: "sun.max.fill", title: "节气", value: solarTerm, color: .green)
+                detailRow(
+                    icon: "sun.max.fill",
+                    title: L10n.text("节气", "Solar Term"),
+                    value: LumaCalendarData.localizedName(solarTerm),
+                    color: .green
+                )
             }
 
             if let label = selectedDay.label {
                 detailRow(
                     icon: selectedDay.holiday?.kind == .workday ? "briefcase.fill" : "flag.fill",
-                    title: selectedDay.holiday?.kind == .workday ? "工作安排" : "节日",
-                    value: selectedDay.holiday?.kind == .workday ? (selectedDay.holiday?.name ?? label) : label,
+                    title: selectedDay.holiday?.kind == .workday
+                        ? L10n.text("工作安排", "Work Schedule")
+                        : L10n.text("节日", "Festival"),
+                    value: selectedDay.holiday?.kind == .workday
+                        ? LumaCalendarData.localizedName(selectedDay.holiday?.name ?? label)
+                        : label,
                     color: selectedDay.holiday?.kind == .workday ? .orange : .red
                 )
             } else {
-                detailRow(icon: "calendar", title: "节假日", value: "无特别标记", color: .secondary)
+                detailRow(
+                    icon: "calendar",
+                    title: L10n.text("节假日", "Holiday"),
+                    value: L10n.text("无特别标记", "No special designation"),
+                    color: .secondary
+                )
             }
 
             Spacer(minLength: 4)
@@ -271,10 +297,10 @@ private struct LumaCalendarYearMonthCard: View {
                 .padding(.leading, 3)
 
             LazyVGrid(columns: columns, spacing: 1) {
-                ForEach(LumaCalendarData.weekdaySymbols, id: \.self) { weekday in
+                ForEach(Array(LumaCalendarData.weekdaySymbols.enumerated()), id: \.offset) { index, weekday in
                     Text(weekday)
                         .font(.system(size: 8, weight: .semibold))
-                        .foregroundStyle(weekday == "六" || weekday == "日" ? .orange : .secondary)
+                        .foregroundStyle(index >= 5 ? .orange : .secondary)
                         .frame(maxWidth: .infinity, minHeight: 13)
                 }
 
@@ -403,9 +429,12 @@ private struct LumaCalendarDayCell: View {
     }
 
     private var accessibilityLabel: String {
-        var values = ["\(day.dayNumber)日", day.lunarText]
+        var values = [
+            L10n.text("\(day.dayNumber)日", "Day \(day.dayNumber)"),
+            day.lunarText
+        ]
         if let label = day.label { values.append(label) }
-        if day.isToday { values.append("今天") }
-        return values.joined(separator: "，")
+        if day.isToday { values.append(L10n.text("今天", "Today")) }
+        return values.joined(separator: L10n.text("，", ", "))
     }
 }

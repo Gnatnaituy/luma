@@ -15,20 +15,20 @@ struct PasswordPluginView: View {
 
     var body: some View {
         Form {
-            Section("生成结果") {
+            Section(L10n.text("生成结果", "Generated Password")) {
                 HStack {
                     Text(password)
                         .font(.system(size: 20, weight: .medium, design: .monospaced))
                         .textSelection(.enabled)
                         .privacySensitive()
                     Spacer()
-                    Button("复制") { clipboard.copy(password) }
+                    Button(L10n.text("复制", "Copy")) { clipboard.copy(password) }
                         .buttonStyle(LumaTextButtonStyle())
                 }
             }
-            Section("选项") {
+            Section(L10n.text("选项", "Options")) {
                 HStack(spacing: 12) {
-                    Text("长度")
+                    Text(L10n.text("长度", "Length"))
                     Text("\(length)")
                         .font(.system(.body, design: .monospaced).weight(.semibold))
                         .foregroundStyle(.blue)
@@ -51,17 +51,17 @@ struct PasswordPluginView: View {
                 }
                 HStack(spacing: 10) {
                     Spacer(minLength: 0)
-                    Toggle("大写字母", isOn: $uppercase)
+                    Toggle(L10n.text("大写字母", "Uppercase"), isOn: $uppercase)
                         .toggleStyle(LumaToggleStyle())
-                    Toggle("数字", isOn: $digits)
+                    Toggle(L10n.text("数字", "Numbers"), isOn: $digits)
                         .toggleStyle(LumaToggleStyle())
-                    Toggle("符号", isOn: $symbols)
+                    Toggle(L10n.text("符号", "Symbols"), isOn: $symbols)
                         .toggleStyle(LumaToggleStyle())
                 }
             }
             HStack {
                 Spacer(minLength: 0)
-                Button("重新生成") { generate() }
+                Button(L10n.text("重新生成", "Regenerate")) { generate() }
                     .buttonStyle(LumaTextButtonStyle(emphasis: .primary))
             }
         }
@@ -224,9 +224,12 @@ struct TranslationPluginView: View {
                         )
                 } else {
                     ContentUnavailableView(
-                        "需要 macOS 14.4 或更高版本",
+                        L10n.text("需要 macOS 14.4 或更高版本", "macOS 14.4 or Later Required"),
                         systemImage: "character.book.closed",
-                        description: Text("当前选择了 Apple 系统翻译")
+                        description: Text(L10n.text(
+                            "当前选择了 Apple 系统翻译",
+                            "Apple Translation is currently selected"
+                        ))
                     )
                 }
             }
@@ -261,7 +264,7 @@ struct TranslationPluginView: View {
                     .frame(width: 120)
                 }
 
-                Button("复制结果") { clipboard.copy(output) }
+                Button(L10n.text("复制结果", "Copy Result")) { clipboard.copy(output) }
                     .buttonStyle(LumaTextButtonStyle())
                     .disabled(output.isEmpty)
 
@@ -272,10 +275,10 @@ struct TranslationPluginView: View {
                         if isLoading {
                             HStack(spacing: 6) {
                                 ProgressView().controlSize(.small)
-                                Text("翻译中")
+                                Text(L10n.text("翻译中", "Translating"))
                             }
                         } else {
-                            Text("翻译")
+                            Text(L10n.text("翻译", "Translate"))
                         }
                     }
                     .buttonStyle(LumaTextButtonStyle(emphasis: .primary))
@@ -283,7 +286,7 @@ struct TranslationPluginView: View {
                               || settings.requestTarget == nil
                               || isLoading)
                 } else {
-                    Button("调用系统翻译") {
+                    Button(L10n.text("调用系统翻译", "Open Apple Translation")) {
                         submitTranslation()
                     }
                     .buttonStyle(LumaTextButtonStyle(emphasis: .primary))
@@ -308,7 +311,10 @@ struct TranslationPluginView: View {
                 }
                 .overlay(alignment: .topLeading) {
                     if output.isEmpty {
-                        Text("翻译结果将在这里显示")
+                        Text(L10n.text(
+                            "翻译结果将在这里显示",
+                            "The translation will appear here"
+                        ))
                             .font(.body)
                             .foregroundStyle(.tertiary)
                             .padding(.leading, 15)
@@ -328,7 +334,7 @@ struct TranslationPluginView: View {
                 Text("\(provider.name) / \(model.name)")
                     .lineLimit(1)
             } else {
-                Text("请先配置 AI 模型")
+                Text(L10n.text("请先配置 AI 模型", "Configure an AI model first"))
             }
         } else {
             Text("Apple Translation")
@@ -337,7 +343,10 @@ struct TranslationPluginView: View {
 
     private func translateWithAI() {
         guard let target = settings.requestTarget else {
-            errorMessage = "AI 配置不可用，请检查供应商、模型和 API Key"
+            errorMessage = L10n.text(
+                "AI 配置不可用，请检查供应商、模型和 API Key",
+                "The AI configuration is unavailable. Check the provider, model, and API key."
+            )
             return
         }
         let source = input
@@ -401,21 +410,21 @@ struct TranslationPluginView: View {
 
         var title: String {
             switch self {
-            case .simplifiedChinese: "简体中文"
+            case .simplifiedChinese: L10n.text("简体中文", "Simplified Chinese")
             case .english: "English"
-            case .japanese: "日本語"
-            case .korean: "한국어"
-            case .spanish: "Español"
+            case .japanese: L10n.text("日本語", "Japanese")
+            case .korean: L10n.text("한국어", "Korean")
+            case .spanish: L10n.text("Español", "Spanish")
             }
         }
 
         var promptName: String {
             switch self {
-            case .simplifiedChinese: "简体中文"
-            case .english: "英语"
-            case .japanese: "日语"
-            case .korean: "韩语"
-            case .spanish: "西班牙语"
+            case .simplifiedChinese: L10n.text("简体中文", "Simplified Chinese")
+            case .english: L10n.text("英语", "English")
+            case .japanese: L10n.text("日语", "Japanese")
+            case .korean: L10n.text("韩语", "Korean")
+            case .spanish: L10n.text("西班牙语", "Spanish")
             }
         }
     }
@@ -423,7 +432,7 @@ struct TranslationPluginView: View {
 
 struct CodePluginView: View {
     @ObservedObject var clipboard: ClipboardMonitor
-    @State private var input = "Luma 原生工具箱"
+    @State private var input = L10n.text("Luma 原生工具箱", "Luma Native Toolbox")
     @State private var output = ""
     @FocusState private var isInputFocused: Bool
 
@@ -441,18 +450,20 @@ struct CodePluginView: View {
                 .background(Color.cyan.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
                 .overlay(RoundedRectangle(cornerRadius: 10).stroke(.cyan.opacity(0.22)))
             HStack(spacing: 8) {
-                Button("Base64 编码") { output = CodeTool.base64Encode(input) }
+                Button(L10n.text("Base64 编码", "Base64 Encode")) { output = CodeTool.base64Encode(input) }
                     .buttonStyle(LumaTextButtonStyle(height: 28))
-                Button("Base64 解码") { output = CodeTool.base64Decode(input) ?? "无法解码" }
+                Button(L10n.text("Base64 解码", "Base64 Decode")) {
+                    output = CodeTool.base64Decode(input) ?? L10n.text("无法解码", "Unable to decode")
+                }
                     .buttonStyle(LumaTextButtonStyle(height: 28))
-                Button("URL 编码") { output = CodeTool.urlEncode(input) }
+                Button(L10n.text("URL 编码", "URL Encode")) { output = CodeTool.urlEncode(input) }
                     .buttonStyle(LumaTextButtonStyle(height: 28))
-                Button("URL 解码") { output = CodeTool.urlDecode(input) }
+                Button(L10n.text("URL 解码", "URL Decode")) { output = CodeTool.urlDecode(input) }
                     .buttonStyle(LumaTextButtonStyle(height: 28))
                 Button("SHA-256") { output = CodeTool.sha256(input) }
                     .buttonStyle(LumaTextButtonStyle(height: 28))
                 Spacer()
-                Button("复制") { clipboard.copy(output) }
+                Button(L10n.text("复制", "Copy")) { clipboard.copy(output) }
                     .buttonStyle(LumaTextButtonStyle(height: 28))
                     .disabled(output.isEmpty)
             }

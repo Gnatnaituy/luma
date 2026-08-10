@@ -73,21 +73,21 @@ enum WeatherDataSource: String, CaseIterable, Codable, Identifiable {
 
     var title: String {
         switch self {
-        case .automatic: "自动"
+        case .automatic: L10n.text("自动", "Automatic")
         case .openMeteo: "Open-Meteo"
         case .metNorway: "MET Norway"
-        case .chinaMeteorologicalAdministration: "中国气象局"
-        case .nationalMeteorologicalCenter: "中央气象台"
+        case .chinaMeteorologicalAdministration: L10n.text("中国气象局", "China Meteorological Administration")
+        case .nationalMeteorologicalCenter: L10n.text("中央气象台", "National Meteorological Center")
         }
     }
 
     var subtitle: String {
         switch self {
-        case .automatic: "优先 Open-Meteo，失败时自动切换 MET Norway 与中国数据源"
-        case .openMeteo: "免密钥，全球覆盖，提供当前、逐小时与七日聚合预报"
-        case .metNorway: "挪威气象研究所官方接口，免密钥，提供全球未来约九日预报"
-        case .chinaMeteorologicalAdministration: "中国气象局官方气象站实况与七日预报，仅支持中国境内"
-        case .nationalMeteorologicalCenter: "国家气象中心官方站点实况与七日预报，仅支持中国境内"
+        case .automatic: L10n.text("优先 Open-Meteo，失败时自动切换 MET Norway 与中国数据源", "Prefer Open-Meteo and automatically fail over to MET Norway and Chinese sources")
+        case .openMeteo: L10n.text("免密钥，全球覆盖，提供当前、逐小时与七日聚合预报", "No key required. Global current, hourly, and 7-day forecasts")
+        case .metNorway: L10n.text("挪威气象研究所官方接口，免密钥，提供全球未来约九日预报", "Official Norwegian Meteorological Institute API with global forecasts for about 9 days")
+        case .chinaMeteorologicalAdministration: L10n.text("中国气象局官方气象站实况与七日预报，仅支持中国境内", "Official station observations and 7-day forecasts for locations in China")
+        case .nationalMeteorologicalCenter: L10n.text("国家气象中心官方站点实况与七日预报，仅支持中国境内", "Official station observations and 7-day forecasts for locations in China")
         }
     }
 }
@@ -95,18 +95,18 @@ enum WeatherDataSource: String, CaseIterable, Codable, Identifiable {
 enum WeatherCondition {
     static func title(for code: Int) -> String {
         switch code {
-        case 0: "晴"
-        case 1: "大部晴朗"
-        case 2: "局部多云"
-        case 3: "阴"
-        case 45, 48: "雾"
-        case 51, 53, 55, 56, 57: "毛毛雨"
-        case 61, 63, 65, 66, 67: "雨"
-        case 71, 73, 75, 77: "雪"
-        case 80, 81, 82: "阵雨"
-        case 85, 86: "阵雪"
-        case 95, 96, 99: "雷雨"
-        default: "未知天气"
+        case 0: L10n.text("晴", "Clear")
+        case 1: L10n.text("大部晴朗", "Mostly Clear")
+        case 2: L10n.text("局部多云", "Partly Cloudy")
+        case 3: L10n.text("阴", "Overcast")
+        case 45, 48: L10n.text("雾", "Fog")
+        case 51, 53, 55, 56, 57: L10n.text("毛毛雨", "Drizzle")
+        case 61, 63, 65, 66, 67: L10n.text("雨", "Rain")
+        case 71, 73, 75, 77: L10n.text("雪", "Snow")
+        case 80, 81, 82: L10n.text("阵雨", "Showers")
+        case 85, 86: L10n.text("阵雪", "Snow Showers")
+        case 95, 96, 99: L10n.text("雷雨", "Thunderstorm")
+        default: L10n.text("未知天气", "Unknown")
         }
     }
 
@@ -125,7 +125,9 @@ enum WeatherCondition {
     }
 
     static func windDirection(_ degrees: Int) -> String {
-        let labels = ["北", "东北", "东", "东南", "南", "西南", "西", "西北"]
+        let labels = L10n.language == .english
+            ? ["N", "NE", "E", "SE", "S", "SW", "W", "NW"]
+            : ["北", "东北", "东", "东南", "南", "西南", "西", "西北"]
         let normalized = (degrees % 360 + 360) % 360
         return labels[Int((Double(normalized) / 45).rounded()) % labels.count]
     }
@@ -140,11 +142,11 @@ enum WeatherServiceError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .emptyQuery: "请输入地点名称"
-        case .locationNotFound: "没有找到该地点"
-        case .invalidResponse: "天气服务暂时不可用"
-        case .malformedData: "天气数据格式异常"
-        case .unsupportedRegion: "当前天气数据源仅支持中国境内地点"
+        case .emptyQuery: L10n.text("请输入地点名称", "Enter a location")
+        case .locationNotFound: L10n.text("没有找到该地点", "Location not found")
+        case .invalidResponse: L10n.text("天气服务暂时不可用", "The weather service is temporarily unavailable")
+        case .malformedData: L10n.text("天气数据格式异常", "Unable to parse weather data")
+        case .unsupportedRegion: L10n.text("当前天气数据源仅支持中国境内地点", "The selected weather source supports locations in China only")
         }
     }
 }
@@ -1009,7 +1011,10 @@ final class WeatherStore: ObservableObject {
         }
         save()
         if failures > 0 {
-            errorMessage = "已刷新 \(locations.count - failures)/\(locations.count) 个地点，\(failures) 个失败"
+            errorMessage = L10n.text(
+                "已刷新 \(locations.count - failures)/\(locations.count) 个地点，\(failures) 个失败",
+                "Refreshed \(locations.count - failures)/\(locations.count) locations; \(failures) failed"
+            )
         }
     }
 
