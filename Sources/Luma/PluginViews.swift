@@ -11,8 +11,6 @@ struct PluginDetailView: View {
     @ObservedObject var stocks: StockStore
     @ObservedObject var weather: WeatherStore
     @ObservedObject var translationSettings: TranslationSettings
-    @ObservedObject var quicklinks: QuicklinkStore
-    @ObservedObject var snippets: SnippetStore
     let selectedText: String
     let arrangeWindow: (WindowLayout) -> Void
     let pasteClipboardEntry: (ClipboardEntry) -> Void
@@ -29,8 +27,6 @@ struct PluginDetailView: View {
         case .stocks: StocksPluginView(store: stocks)
         case .weather: WeatherPluginView(store: weather)
         case .calendar: CalendarPluginView()
-        case .quicklinks: QuicklinksPluginView(store: quicklinks)
-        case .snippets: SnippetsPluginView(store: snippets, clipboard: clipboard)
         case .windows: WindowManagementPluginView(arrange: arrangeWindow)
         }
     }

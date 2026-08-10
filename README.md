@@ -8,7 +8,7 @@ Luma 是一款轻量、原生的 macOS 工具启动器，使用 Swift、SwiftUI�
 
 - 默认按 `⌥ Space` 唤起或隐藏浮动面板。
 - 空白首页只展示搜索框与最近使用记录。
-- 输入后统一搜索插件、macOS App、Spotlight 文件、Quicklinks、片段与算式。
+- 输入后统一搜索插件、macOS App、Spotlight 文件与算式。
 - 选中插件后直接展示有效内容，不保留插件侧边栏或介绍区域。
 - 支持方向键选择、`Enter` 执行、`Esc` 返回，以及右方向键展开结果操作。
 - 面板自动出现在当前聚焦屏幕，并记住本次运行期间的位置与各页面高度。
@@ -33,27 +33,6 @@ Luma 启动后会在后台低优先级扫描标准 Applications 目录，为本�
 
 不同类型的结果可执行打开、复制、粘贴或 Finder 定位等操作。
 
-### Quicklinks
-
-Quicklinks 可通过关键词打开 URL、文件或文件夹，并支持动态占位符：
-
-| 占位符 | 内容 |
-| --- | --- |
-| `{query}` | Quicklink 关键词后的输入 |
-| `{clipboard}` | 当前剪贴板文本 |
-| `{selectedText}` | 唤起 Luma 前选中的文本 |
-| `{date}` | 当前 ISO 8601 时间 |
-
-例如：
-
-```text
-名称：GitHub 搜索
-关键词：gh
-模板：https://github.com/search?q={query}
-```
-
-输入 `gh native swift` 后即可打开对应搜索结果。
-
 ## 内置插件
 
 | 插件 | 功能 |
@@ -66,8 +45,6 @@ Quicklinks 可通过关键词打开 URL、文件或文件夹，并支持动态�
 | 编码小助手 | Base64、URL 编解码和 SHA-256 |
 | 股票盯盘 | A 股、港股、美股查询及分时、五日和 K 线走势 |
 | 天气 | 多地点天气、逐小时预报与七日预报 |
-| Quicklinks | 关键词驱动的 URL、文件和自定义搜索 |
-| 片段 | 保存常用文本，从主搜索直接粘贴 |
 | 窗口管理 | 左半屏、右半屏、最大化和居中布局 |
 
 ## 剪贴板
@@ -236,7 +213,7 @@ swift test
 
 剪贴板历史索引使用原子 JSON 写入，图片按内容哈希保存。启动时只加载图片文件引用，不会一次性把历史图片全部解码到内存。
 
-剪贴板目录被标记为不参与系统备份。配置导出包含快捷键、插件设置、片段、自选股票和天气地点等数据，但排除钥匙串密钥。
+剪贴板目录被标记为不参与系统备份。配置导出包含快捷键、插件设置、自选股票和天气地点等数据，但排除钥匙串密钥。
 
 Apple Translation 复用系统能力。只有选择 AI 翻译时，Luma 才会按次请求用户配置的公网接口。
 
@@ -250,7 +227,7 @@ Sources/Luma/
 ├── LauncherView.swift             # 主面板与搜索结果
 ├── Plugin.swift                   # 插件类型与 CommandCatalog
 ├── PluginViews.swift              # 插件路由与剪贴板界面
-├── ProductivityFeatures.swift     # 文件、Quicklinks、片段等能力
+├── ProductivityFeatures.swift     # 文件搜索、窗口管理辅助与设置备份
 ├── StockService.swift             # 股票查询与数据源
 ├── WeatherService.swift           # 天气查询与数据源
 ├── ClipboardMonitor.swift         # 剪贴板采集、过滤与去重

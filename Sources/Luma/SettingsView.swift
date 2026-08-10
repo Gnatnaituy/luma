@@ -278,7 +278,7 @@ struct SettingsView: View {
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text("配置备份").font(.headline)
-                    Text("导出设置、自选项、Quicklinks 与片段；不会导出 AI 密钥。")
+                    Text("导出设置、自选项与天气地点；不会导出 AI 密钥。")
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 Spacer()
