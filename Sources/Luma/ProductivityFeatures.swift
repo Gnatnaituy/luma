@@ -4,106 +4,6 @@ import Combine
 import Foundation
 import ServiceManagement
 
-struct Quicklink: Codable, Equatable, Identifiable {
-    var id = UUID()
-    var name: String
-    var template: String
-    var keyword: String
-
-    func resolved(query: String, clipboard: String, selectedText: String) -> URL? {
-        let encoded = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? query
-        let selected = selectedText.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? selectedText
-        let clip = clipboard.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? clipboard
-        let date = ISO8601DateFormatter().string(from: Date())
-        let value = template
-            .replacingOccurrences(of: "{query}", with: encoded)
-            .replacingOccurrences(of: "{clipboard}", with: clip)
-            .replacingOccurrences(of: "{selectedText}", with: selected)
-            .replacingOccurrences(of: "{date}", with: date)
-        if let url = URL(string: value), url.scheme != nil { return url }
-        return URL(fileURLWithPath: (value as NSString).expandingTildeInPath)
-    }
-}
-
-@MainActor
-final class QuicklinkStore: ObservableObject {
-    @Published private(set) var items: [Quicklink] = []
-    private let defaults: UserDefaults
-    private let key = "luma.quicklinks.v1"
-
-    init(defaults: UserDefaults = .standard) {
-        self.defaults = defaults
-        if let data = defaults.data(forKey: key),
-           let saved = try? JSONDecoder().decode([Quicklink].self, from: data) {
-            items = saved
-        }
-    }
-
-    func add(name: String, template: String, keyword: String) {
-        let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        let template = template.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !name.isEmpty, !template.isEmpty else { return }
-        items.append(.init(name: name, template: template, keyword: keyword.trimmingCharacters(in: .whitespacesAndNewlines)))
-        save()
-    }
-
-    func remove(_ item: Quicklink) { items.removeAll { $0.id == item.id }; save() }
-
-    func matches(_ query: String) -> [(Quicklink, String)] {
-        let input = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !input.isEmpty else { return [] }
-        return items.compactMap { item in
-            let pieces = input.split(separator: " ", maxSplits: 1).map(String.init)
-            if !item.keyword.isEmpty, pieces.first?.lowercased() == item.keyword.lowercased() {
-                return (item, pieces.count > 1 ? pieces[1] : "")
-            }
-            if item.name.localizedCaseInsensitiveContains(input) || item.keyword.localizedCaseInsensitiveContains(input) {
-                return (item, input)
-            }
-            return nil
-        }
-    }
-
-    private func save() { if let data = try? JSONEncoder().encode(items) { defaults.set(data, forKey: key) } }
-}
-
-struct Snippet: Codable, Equatable, Identifiable {
-    var id = UUID()
-    var name: String
-    var content: String
-    var keyword: String
-}
-
-@MainActor
-final class SnippetStore: ObservableObject {
-    @Published private(set) var items: [Snippet] = []
-    private let defaults: UserDefaults
-    private let key = "luma.snippets.v1"
-
-    init(defaults: UserDefaults = .standard) {
-        self.defaults = defaults
-        if let data = defaults.data(forKey: key),
-           let saved = try? JSONDecoder().decode([Snippet].self, from: data) { items = saved }
-    }
-
-    func add(name: String, content: String, keyword: String) {
-        guard !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, !content.isEmpty else { return }
-        items.append(.init(name: name, content: content, keyword: keyword.trimmingCharacters(in: .whitespacesAndNewlines)))
-        save()
-    }
-    func remove(_ item: Snippet) { items.removeAll { $0.id == item.id }; save() }
-    func search(_ query: String) -> [Snippet] {
-        let value = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !value.isEmpty else { return [] }
-        return Array(items.filter {
-            $0.name.localizedCaseInsensitiveContains(value)
-                || $0.keyword.localizedCaseInsensitiveContains(value)
-                || $0.content.localizedCaseInsensitiveContains(value)
-        }.prefix(10))
-    }
-    private func save() { if let data = try? JSONEncoder().encode(items) { defaults.set(data, forKey: key) } }
-}
-
 struct IndexedFile: Equatable, Identifiable {
     let url: URL
     let name: String
@@ -199,7 +99,7 @@ enum SettingsBackup {
     static let supportedKeys = [
         "Luma.showsStatusBarIcon", "Luma.recentSearchDisplayMode",
         "Luma.globalShortcut", "Luma.keywordShortcuts", "Luma.pluginConfigurations",
-        "Luma.recentUsage.v1", "luma.quicklinks.v1", "luma.snippets.v1",
+        "Luma.recentUsage.v1",
         "luma.stock.query-records.v1", "luma.stock.color-theme.v1", "luma.stock.data-source.v1",
         "luma.weather.locations.v1", "luma.weather.data-source.v1",
         "luma.clipboard.retention.v1", "luma.clipboard.storage-limit.v1",

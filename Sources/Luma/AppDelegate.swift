@@ -15,20 +15,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private lazy var translationSettings = TranslationSettings(aiSettings: aiSettings)
     private let installedApps = InstalledAppIndex()
     private let recentUsage = RecentUsageStore()
-    private let quicklinks = QuicklinkStore()
-    private let snippets = SnippetStore()
     private let fileSearch = FileSearchIndex()
     private lazy var model = LauncherModel(
         clipboard: clipboard,
         pluginSettings: pluginSettings,
         installedApps: installedApps,
         recentUsage: recentUsage,
-        fileSearch: fileSearch,
-        quicklinks: quicklinks,
-        snippets: snippets,
-        textPaster: { [weak self] text in
-            self?.pasteText(text)
-        }
+        fileSearch: fileSearch
     )
     private var panel: LauncherPanel?
     private var statusItem: NSStatusItem?
@@ -102,8 +95,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             pluginSettings: pluginSettings,
             aiSettings: aiSettings,
             translationSettings: translationSettings,
-            quicklinks: quicklinks,
-            snippets: snippets,
             pasteClipboardEntry: { [weak self] entry in
                 self?.pasteClipboardEntry(entry)
             },
@@ -217,10 +208,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         ) { [weak self] in
             self?.showPastePermissionAlert()
         }
-    }
-
-    private func pasteText(_ text: String) {
-        pasteClipboardEntry(ClipboardEntry(payload: .text(text)))
     }
 
     private func showPastePermissionAlert() {

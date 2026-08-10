@@ -993,8 +993,6 @@ struct CoreTests {
             installedApps: installedApps,
             recentUsage: recentUsage,
             fileSearch: FileSearchIndex(),
-            quicklinks: QuicklinkStore(defaults: recentDefaults),
-            snippets: SnippetStore(defaults: recentDefaults),
             applicationOpener: { url in
                 openedApplicationURL = url
                 return true

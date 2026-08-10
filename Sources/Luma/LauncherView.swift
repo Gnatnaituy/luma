@@ -11,8 +11,6 @@ struct LauncherView: View {
     @ObservedObject var pluginSettings: PluginSettings
     @ObservedObject var aiSettings: AISettings
     @ObservedObject var translationSettings: TranslationSettings
-    @ObservedObject var quicklinks: QuicklinkStore
-    @ObservedObject var snippets: SnippetStore
     let pasteClipboardEntry: (ClipboardEntry) -> Void
     let arrangeWindow: (WindowLayout) -> Void
     let dismiss: () -> Void
@@ -122,8 +120,6 @@ struct LauncherView: View {
                     stocks: stocks,
                     weather: weather,
                     translationSettings: translationSettings,
-                    quicklinks: quicklinks,
-                    snippets: snippets,
                     selectedText: model.selectedText,
                     arrangeWindow: arrangeWindow,
                     pasteClipboardEntry: pasteClipboardEntry
@@ -381,7 +377,7 @@ private struct SearchResultsView: View {
                         ContentUnavailableView(
                             "没有匹配的结果",
                             systemImage: "magnifyingglass",
-                            description: Text("可搜索插件、App、文件、片段、Quicklink 或输入算式")
+                            description: Text("可搜索插件、App、文件或输入算式")
                         )
                         .padding(.top, 60)
                     }
@@ -469,8 +465,6 @@ private struct UnifiedResultRow: View {
         case .plugin(let plugin): plugin.title
         case .application(let app): app.name
         case .file(let file): file.name
-        case .quicklink(let item, _): item.name
-        case .snippet(let item): item.name
         }
     }
 
@@ -480,8 +474,6 @@ private struct UnifiedResultRow: View {
         case .plugin(let plugin): plugin.subtitle
         case .application(let app): app.bundleIdentifier ?? "macOS 应用程序"
         case .file(let file): file.url.deletingLastPathComponent().path
-        case .quicklink(let item, _): "Quicklink · \(item.template)"
-        case .snippet(let item): "片段 · \(item.content)"
         }
     }
 
@@ -491,8 +483,6 @@ private struct UnifiedResultRow: View {
         case .plugin(let plugin): plugin.symbol
         case .application: "app"
         case .file: "doc"
-        case .quicklink: "link"
-        case .snippet: "text.quote"
         }
     }
 
@@ -502,8 +492,6 @@ private struct UnifiedResultRow: View {
         case .plugin(let plugin): plugin.tint
         case .application: .blue
         case .file: .gray
-        case .quicklink: .mint
-        case .snippet: .pink
         }
     }
 }

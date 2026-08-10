@@ -13,8 +13,6 @@ enum LauncherSearchResult: Identifiable {
     case plugin(Plugin)
     case application(InstalledApplication)
     case file(IndexedFile)
-    case quicklink(Quicklink, query: String)
-    case snippet(Snippet)
 
     var id: String {
         switch self {
@@ -22,8 +20,6 @@ enum LauncherSearchResult: Identifiable {
         case .plugin(let value): "plugin:\(value.id)"
         case .application(let value): "application:\(value.id)"
         case .file(let value): "file:\(value.id)"
-        case .quicklink(let value, _): "quicklink:\(value.id)"
-        case .snippet(let value): "snippet:\(value.id)"
         }
     }
 }
@@ -85,10 +81,7 @@ final class LauncherModel: ObservableObject {
     let installedApps: InstalledAppIndex
     let recentUsage: RecentUsageStore
     let fileSearch: FileSearchIndex
-    let quicklinks: QuicklinkStore
-    let snippets: SnippetStore
     private let applicationOpener: (URL) -> Bool
-    private let textPaster: (String) -> Void
     private var cancellables = Set<AnyCancellable>()
 
     init(
@@ -97,20 +90,14 @@ final class LauncherModel: ObservableObject {
         installedApps: InstalledAppIndex,
         recentUsage: RecentUsageStore = RecentUsageStore(),
         fileSearch: FileSearchIndex,
-        quicklinks: QuicklinkStore,
-        snippets: SnippetStore,
-        applicationOpener: @escaping (URL) -> Bool = { NSWorkspace.shared.open($0) },
-        textPaster: @escaping (String) -> Void = { _ in }
+        applicationOpener: @escaping (URL) -> Bool = { NSWorkspace.shared.open($0) }
     ) {
         self.clipboard = clipboard
         self.pluginSettings = pluginSettings
         self.installedApps = installedApps
         self.recentUsage = recentUsage
         self.fileSearch = fileSearch
-        self.quicklinks = quicklinks
-        self.snippets = snippets
         self.applicationOpener = applicationOpener
-        self.textPaster = textPaster
         clipboard.objectWillChange
             .sink { [weak self] _ in self?.objectWillChange.send() }
             .store(in: &cancellables)
@@ -124,12 +111,6 @@ final class LauncherModel: ObservableObject {
             .sink { [weak self] _ in self?.objectWillChange.send() }
             .store(in: &cancellables)
         fileSearch.objectWillChange
-            .sink { [weak self] _ in self?.objectWillChange.send() }
-            .store(in: &cancellables)
-        quicklinks.objectWillChange
-            .sink { [weak self] _ in self?.objectWillChange.send() }
-            .store(in: &cancellables)
-        snippets.objectWillChange
             .sink { [weak self] _ in self?.objectWillChange.send() }
             .store(in: &cancellables)
         $query
@@ -164,8 +145,6 @@ final class LauncherModel: ObservableObject {
         if let instantCalculation { results.append(.calculation(instantCalculation)) }
         results.append(contentsOf: filteredPlugins.map(LauncherSearchResult.plugin))
         results.append(contentsOf: filteredApplications.map(LauncherSearchResult.application))
-        results.append(contentsOf: quicklinks.matches(query).map { .quicklink($0.0, query: $0.1) })
-        results.append(contentsOf: snippets.search(query).map(LauncherSearchResult.snippet))
         results.append(contentsOf: fileSearch.results.map(LauncherSearchResult.file))
         return results
     }
@@ -279,14 +258,6 @@ final class LauncherModel: ObservableObject {
         case .plugin(let plugin): openPlugin(plugin)
         case .application(let application): openApplication(application)
         case .file(let file): NSWorkspace.shared.open(file.url); returnToSearch()
-        case .quicklink(let item, let query):
-            let clipboardText = NSPasteboard.general.string(forType: .string) ?? ""
-            if let url = item.resolved(query: query, clipboard: clipboardText, selectedText: selectedText) {
-                NSWorkspace.shared.open(url)
-                returnToSearch()
-            }
-        case .snippet(let snippet):
-            textPaster(snippet.content)
         }
     }
 
@@ -302,8 +273,6 @@ final class LauncherModel: ObservableObject {
         case .plugin(let plugin): clipboard.copy(plugin.title)
         case .application(let app): clipboard.copy(app.url.path)
         case .file(let file): clipboard.copy(file.url.path)
-        case .quicklink(let link, _): clipboard.copy(link.template)
-        case .snippet(let snippet): clipboard.copy(snippet.content)
         }
     }
 
