@@ -66,7 +66,6 @@ struct LauncherView: View {
                 }
                 .buttonStyle(LumaIconButtonStyle(size: 32, cornerRadius: 8))
                 .help("返回搜索")
-                .transition(headerTransition)
             } else {
                 Image(nsImage: NSApplication.shared.applicationIconImage)
                     .resizable()
@@ -75,7 +74,6 @@ struct LauncherView: View {
                     .frame(width: 32, height: 32)
                     .scaleEffect(1.25)
                     .accessibilityLabel("Luma")
-                    .transition(headerTransition)
             }
 
             LauncherSearchField(
@@ -109,7 +107,6 @@ struct LauncherView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
-        .animation(LumaMotion.quick, value: model.presentation)
     }
 
     @ViewBuilder
@@ -149,12 +146,6 @@ struct LauncherView: View {
                 displayMode: applicationSettings.recentSearchDisplayMode
             )
         }
-    }
-
-    private var headerTransition: AnyTransition {
-        model.presentation == .plugin
-            ? .identity
-            : .opacity.combined(with: .scale(scale: 0.9))
     }
 }
 
