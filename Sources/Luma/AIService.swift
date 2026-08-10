@@ -15,13 +15,15 @@ enum AIServiceError: LocalizedError, Equatable {
     var errorDescription: String? {
         switch self {
         case .invalidBaseURL:
-            "Base URL 无效"
+            L10n.text("Base URL 无效", "Invalid Base URL")
         case .invalidResponse:
-            "AI 服务返回了无法识别的响应"
+            L10n.text("AI 服务返回了无法识别的响应", "The AI service returned an unrecognized response")
         case .requestFailed(let statusCode, let message):
-            message.isEmpty ? "AI 请求失败（HTTP \(statusCode)）" : "AI 请求失败（HTTP \(statusCode)）：\(message)"
+            message.isEmpty
+                ? L10n.text("AI 请求失败（HTTP \(statusCode)）", "AI request failed (HTTP \(statusCode))")
+                : L10n.text("AI 请求失败（HTTP \(statusCode)）：\(message)", "AI request failed (HTTP \(statusCode)): \(message)")
         case .emptyResponse:
-            "AI 服务未返回文本"
+            L10n.text("AI 服务未返回文本", "The AI service returned no text")
         }
     }
 }
@@ -38,8 +40,14 @@ struct AIService {
         targetLanguage: String,
         target: AIRequestTarget
     ) async throws -> String {
-        let systemPrompt = "你是一名专业翻译。准确保留原文含义、格式、专有名词和换行，只输出翻译结果，不要解释。"
-        let userPrompt = "请将以下内容翻译为\(targetLanguage)：\n\n\(text)"
+        let systemPrompt = L10n.text(
+            "你是一名专业翻译。准确保留原文含义、格式、专有名词和换行，只输出翻译结果，不要解释。",
+            "You are a professional translator. Preserve meaning, formatting, proper nouns, and line breaks. Return only the translation without explanation."
+        )
+        let userPrompt = L10n.text(
+            "请将以下内容翻译为\(targetLanguage)：\n\n\(text)",
+            "Translate the following content into \(targetLanguage):\n\n\(text)"
+        )
         return try await send(systemPrompt: systemPrompt, userPrompt: userPrompt, target: target)
     }
 

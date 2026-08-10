@@ -13,11 +13,11 @@ enum StockChartPeriod: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .intraday: "分时"
-        case .fiveDay: "五日"
-        case .daily: "日K"
-        case .weekly: "周K"
-        case .monthly: "月K"
+        case .intraday: L10n.text("分时", "Intraday")
+        case .fiveDay: L10n.text("五日", "5 Days")
+        case .daily: L10n.text("日K", "Daily")
+        case .weekly: L10n.text("周K", "Weekly")
+        case .monthly: L10n.text("月K", "Monthly")
         }
     }
 

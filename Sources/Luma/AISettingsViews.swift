@@ -22,7 +22,7 @@ struct AIManagementView: View {
 
     private var providerSidebar: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("供应商")
+            Text(L10n.text("供应商", "Providers"))
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 10)
@@ -35,7 +35,7 @@ struct AIManagementView: View {
                     HStack(spacing: 9) {
                         Image(systemName: "shippingbox")
                             .foregroundStyle(provider.isEnabled ? Color.accentColor : Color.secondary)
-                        Text(provider.name.isEmpty ? "未命名供应商" : provider.name)
+                        Text(provider.name.isEmpty ? L10n.text("未命名供应商", "Unnamed Provider") : provider.name)
                             .lineLimit(1)
                         Spacer(minLength: 4)
                         Circle()
@@ -59,7 +59,7 @@ struct AIManagementView: View {
             Button {
                 _ = settings.addProvider()
             } label: {
-                Label("添加供应商", systemImage: "plus")
+                Label(L10n.text("添加供应商", "Add Provider"), systemImage: "plus")
             }
             .buttonStyle(LumaTextButtonStyle())
             Spacer(minLength: 0)
@@ -73,10 +73,10 @@ struct AIManagementView: View {
         if let provider = settings.selectedProvider {
             VStack(alignment: .leading, spacing: 16) {
                 HStack(spacing: 10) {
-                    TextField("供应商名称", text: providerBinding(provider.id, \.name))
+                    TextField(L10n.text("供应商名称", "Provider Name"), text: providerBinding(provider.id, \.name))
                         .textFieldStyle(LumaTextFieldStyle(height: 34))
                         .font(.title3.bold())
-                    Toggle("启用", isOn: providerBinding(provider.id, \.isEnabled))
+                    Toggle(L10n.text("启用", "Enable"), isOn: providerBinding(provider.id, \.isEnabled))
                         .toggleStyle(LumaToggleStyle())
                     Button(role: .destructive) {
                         settings.removeProvider(id: provider.id)
@@ -85,7 +85,7 @@ struct AIManagementView: View {
                             .foregroundStyle(.red.opacity(0.8))
                     }
                     .buttonStyle(LumaIconButtonStyle())
-                    .help("删除供应商")
+                    .help(L10n.text("删除供应商", "Delete Provider"))
                 }
 
                 fieldGroup("Base URL") {
@@ -93,7 +93,7 @@ struct AIManagementView: View {
                         .textFieldStyle(LumaTextFieldStyle())
                 }
 
-                fieldGroup("API 格式") {
+                fieldGroup(L10n.text("API 格式", "API Format")) {
                     LumaMenuPicker(
                         selection: providerBinding(provider.id, \.apiFormat),
                         values: AIAPIFormat.allCases,
@@ -101,7 +101,10 @@ struct AIManagementView: View {
                     )
                 }
 
-                fieldGroup("API Key（存储在 macOS 钥匙串）") {
+                fieldGroup(L10n.text(
+                    "API Key（存储在 macOS 钥匙串）",
+                    "API Key (stored in macOS Keychain)"
+                )) {
                     HStack(spacing: 8) {
                         Group {
                             if revealsAPIKey {
@@ -117,28 +120,33 @@ struct AIManagementView: View {
                             Image(systemName: revealsAPIKey ? "eye.slash" : "eye")
                         }
                         .buttonStyle(LumaIconButtonStyle())
-                        .help(revealsAPIKey ? "隐藏 API Key" : "显示 API Key")
+                        .help(revealsAPIKey
+                            ? L10n.text("隐藏 API Key", "Hide API Key")
+                            : L10n.text("显示 API Key", "Show API Key"))
                     }
                 }
 
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("模型列表")
+                    Text(L10n.text("模型列表", "Models"))
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(.secondary)
 
                     VStack(spacing: 0) {
                         ForEach(provider.models) { model in
                             HStack(spacing: 8) {
-                                TextField("模型名称", text: modelNameBinding(provider.id, model.id))
+                                TextField(
+                                    L10n.text("模型名称", "Model Name"),
+                                    text: modelNameBinding(provider.id, model.id)
+                                )
                                     .textFieldStyle(LumaTextFieldStyle())
                                 TextField(
-                                    "上下文",
+                                    L10n.text("上下文", "Context"),
                                     value: modelContextBinding(provider.id, model.id),
                                     format: .number
                                 )
                                 .textFieldStyle(LumaTextFieldStyle())
                                 .frame(width: 92)
-                                .help("上下文窗口（tokens）")
+                                .help(L10n.text("上下文窗口（tokens）", "Context window (tokens)"))
                                 Button(role: .destructive) {
                                     settings.removeModel(providerID: provider.id, modelID: model.id)
                                 } label: {
@@ -158,7 +166,7 @@ struct AIManagementView: View {
                         Button {
                             _ = settings.addModel(to: provider.id)
                         } label: {
-                            Label("添加模型", systemImage: "plus")
+                            Label(L10n.text("添加模型", "Add Model"), systemImage: "plus")
                         }
                         .buttonStyle(LumaTextButtonStyle(height: 28))
 
@@ -168,7 +176,7 @@ struct AIManagementView: View {
                             if connectionState == .testing {
                                 ProgressView().controlSize(.small)
                             } else {
-                                Label("测试连接", systemImage: "bolt.horizontal.circle")
+                                Label(L10n.text("测试连接", "Test Connection"), systemImage: "bolt.horizontal.circle")
                             }
                         }
                         .buttonStyle(LumaTextButtonStyle(height: 28))
@@ -184,9 +192,12 @@ struct AIManagementView: View {
             .frame(maxWidth: .infinity, alignment: .topLeading)
         } else {
             ContentUnavailableView(
-                "还没有 AI 供应商",
+                L10n.text("还没有 AI 供应商", "No AI Providers"),
                 systemImage: "brain.head.profile",
-                description: Text("点击左侧“添加供应商”开始配置")
+                description: Text(L10n.text(
+                    "点击左侧“添加供应商”开始配置",
+                    "Click Add Provider on the left to get started"
+                ))
             )
             .frame(maxWidth: .infinity, minHeight: 420)
         }
@@ -259,7 +270,7 @@ struct AIManagementView: View {
         case .idle, .testing:
             EmptyView()
         case .success:
-            Label("连接成功", systemImage: "checkmark.circle.fill")
+            Label(L10n.text("连接成功", "Connected"), systemImage: "checkmark.circle.fill")
                 .foregroundStyle(.green)
                 .font(.caption)
         case .failure(let message):
@@ -285,7 +296,7 @@ struct TranslationSettingsView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             VStack(alignment: .leading, spacing: 8) {
-                Text("翻译引擎")
+                Text(L10n.text("翻译引擎", "Translation Engine"))
                     .font(.headline)
                 HStack(spacing: 8) {
                     ForEach(TranslationBackend.allCases) { backend in
@@ -303,33 +314,36 @@ struct TranslationSettingsView: View {
                 VStack(alignment: .leading, spacing: 14) {
                     if aiSettings.enabledProviders.isEmpty {
                         ContentUnavailableView(
-                            "没有可用的 AI 供应商",
+                            L10n.text("没有可用的 AI 供应商", "No Available AI Providers"),
                             systemImage: "exclamationmark.triangle",
-                            description: Text("请先在“AI 管理”中填写 API Key、模型并启用供应商")
+                            description: Text(L10n.text(
+                                "请先在“AI 管理”中填写 API Key、模型并启用供应商",
+                                "Add an API key and model in AI settings, then enable the provider"
+                            ))
                         )
                         .frame(maxWidth: .infinity, minHeight: 180)
                     } else {
-                        formRow("AI 供应商") {
+                        formRow(L10n.text("AI 供应商", "AI Provider")) {
                             LumaMenuPicker(
                                 selection: providerBinding,
                                 values: aiSettings.enabledProviders.map { Optional($0.id) },
                                 title: { providerID in
-                                    guard let providerID else { return "请选择" }
+                                    guard let providerID else { return L10n.text("请选择", "Select") }
                                     return aiSettings.enabledProviders
-                                        .first(where: { $0.id == providerID })?.name ?? "请选择"
+                                        .first(where: { $0.id == providerID })?.name ?? L10n.text("请选择", "Select")
                                 }
                             )
                             .frame(maxWidth: 360)
                         }
 
-                        formRow("翻译模型") {
+                        formRow(L10n.text("翻译模型", "Translation Model")) {
                             LumaMenuPicker(
                                 selection: modelBinding,
                                 values: (settings.selectedProvider?.models ?? []).map { Optional($0.id) },
                                 title: { modelID in
-                                    guard let modelID else { return "请选择" }
+                                    guard let modelID else { return L10n.text("请选择", "Select") }
                                     return settings.selectedProvider?.models
-                                        .first(where: { $0.id == modelID })?.name ?? "请选择"
+                                        .first(where: { $0.id == modelID })?.name ?? L10n.text("请选择", "Select")
                                 }
                             )
                             .frame(maxWidth: 360)
@@ -338,8 +352,14 @@ struct TranslationSettingsView: View {
                         HStack(spacing: 7) {
                             Image(systemName: settings.requestTarget == nil ? "exclamationmark.circle" : "checkmark.circle.fill")
                             Text(settings.requestTarget == nil
-                                 ? "当前配置不可用，请检查启用状态、模型和 API Key"
-                                 : "翻译插件将使用 \(settings.selectedProvider?.name ?? "") / \(settings.selectedModel?.name ?? "")")
+                                 ? L10n.text(
+                                    "当前配置不可用，请检查启用状态、模型和 API Key",
+                                    "The configuration is unavailable. Check the provider, model, and API key."
+                                 )
+                                 : L10n.text(
+                                    "翻译插件将使用 \(settings.selectedProvider?.name ?? "") / \(settings.selectedModel?.name ?? "")",
+                                    "Translation will use \(settings.selectedProvider?.name ?? "") / \(settings.selectedModel?.name ?? "")"
+                                 ))
                         }
                         .font(.caption)
                         .foregroundStyle(settings.requestTarget == nil ? Color.orange : Color.green)
@@ -349,7 +369,13 @@ struct TranslationSettingsView: View {
                 .background(Color.primary.opacity(0.025), in: RoundedRectangle(cornerRadius: 12))
                 .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.primary.opacity(0.1)))
             } else {
-                Label("使用 macOS 自带 Translation 服务，翻译时会显示系统翻译面板。", systemImage: "apple.logo")
+                Label(
+                    L10n.text(
+                        "使用 macOS 自带 Translation 服务，翻译时会显示系统翻译面板。",
+                        "Uses the built-in macOS Translation service and presents the system translation panel."
+                    ),
+                    systemImage: "apple.logo"
+                )
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .padding(16)

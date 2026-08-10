@@ -6,8 +6,8 @@ enum ExpressionError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .unexpected(let value): "无法解析：\(value)"
-        case .divisionByZero: "不能除以零"
+        case .unexpected(let value): L10n.text("无法解析：\(value)", "Cannot parse: \(value)")
+        case .divisionByZero: L10n.text("不能除以零", "Cannot divide by zero")
         }
     }
 }
@@ -90,7 +90,9 @@ struct ExpressionEvaluator {
             if consume("(") {
                 let value = try parseExpression()
                 skipWhitespace()
-                guard consume(")") else { throw ExpressionError.unexpected("缺少右括号") }
+                guard consume(")") else {
+                    throw ExpressionError.unexpected(L10n.text("缺少右括号", "Missing closing parenthesis"))
+                }
                 return value
             }
 
@@ -101,7 +103,9 @@ struct ExpressionEvaluator {
                 skipWhitespace()
                 guard consume("(") else { throw ExpressionError.unexpected(name) }
                 let argument = try parseExpression()
-                guard consume(")") else { throw ExpressionError.unexpected("缺少右括号") }
+                guard consume(")") else {
+                    throw ExpressionError.unexpected(L10n.text("缺少右括号", "Missing closing parenthesis"))
+                }
                 switch name {
                 case "sqrt": return sqrt(argument)
                 case "sin": return sin(argument)
@@ -116,7 +120,9 @@ struct ExpressionEvaluator {
 
             let number = parseNumber()
             guard let value = Double(number), !number.isEmpty else {
-                throw ExpressionError.unexpected(isAtEnd ? "表达式不完整" : String(characters[index]))
+                throw ExpressionError.unexpected(
+                    isAtEnd ? L10n.text("表达式不完整", "Incomplete expression") : String(characters[index])
+                )
             }
             return value
         }

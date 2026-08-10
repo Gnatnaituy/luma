@@ -60,7 +60,7 @@ struct ClipboardPluginView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            TextField("搜索剪贴板内容", text: $searchText)
+            TextField(L10n.text("搜索剪贴板内容", "Search Clipboard"), text: $searchText)
                 .textFieldStyle(LumaTextFieldStyle(height: 32))
                 .focused($isSearchFocused)
                 .padding(.horizontal, 24)
@@ -84,12 +84,17 @@ struct ClipboardPluginView: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
 
-                Text("最近 \(clipboard.entries.count) 条")
+                Text(L10n.text(
+                    "最近 \(clipboard.entries.count) 条",
+                    "Latest \(clipboard.entries.count)"
+                ))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize()
 
-                Button("清空未收藏", role: .destructive) { clipboard.clearHistory() }
+                Button(L10n.text("清空未收藏", "Clear Unfavorited"), role: .destructive) {
+                    clipboard.clearHistory()
+                }
                     .buttonStyle(LumaTextButtonStyle(emphasis: .destructive, height: 28))
                     .disabled(!clipboard.entries.contains { !$0.isFavorite })
             }
@@ -97,12 +102,33 @@ struct ClipboardPluginView: View {
             .padding(.vertical, 10)
 
             if clipboard.entries.isEmpty {
-                ContentUnavailableView("还没有剪贴板记录", systemImage: "clipboard", description: Text("复制文本、图片、文件或链接后会自动持久化到本机"))
+                ContentUnavailableView(
+                    L10n.text("还没有剪贴板记录", "No Clipboard History"),
+                    systemImage: "clipboard",
+                    description: Text(L10n.text(
+                        "复制文本、图片、文件或链接后会自动持久化到本机",
+                        "Copied text, images, files, and links are stored locally"
+                    ))
+                )
             } else if visibleEntries.isEmpty {
                 if searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    ContentUnavailableView("该分类暂无记录", systemImage: "line.3.horizontal.decrease.circle", description: Text("切换到其他类型查看剪贴板历史"))
+                    ContentUnavailableView(
+                        L10n.text("该分类暂无记录", "No Items in This Category"),
+                        systemImage: "line.3.horizontal.decrease.circle",
+                        description: Text(L10n.text(
+                            "切换到其他类型查看剪贴板历史",
+                            "Choose another type to browse clipboard history"
+                        ))
+                    )
                 } else {
-                    ContentUnavailableView("没有匹配的剪贴板记录", systemImage: "magnifyingglass", description: Text("尝试其他关键词或切换内容类型"))
+                    ContentUnavailableView(
+                        L10n.text("没有匹配的剪贴板记录", "No Matching Clipboard Items"),
+                        systemImage: "magnifyingglass",
+                        description: Text(L10n.text(
+                            "尝试其他关键词或切换内容类型",
+                            "Try another keyword or content type"
+                        ))
+                    )
                 }
             } else {
                 ScrollViewReader { proxy in
@@ -410,14 +436,18 @@ struct ClipboardEntryRow: View {
                 } label: {
                     HStack(spacing: 7) {
                         Image(systemName: isImageExpanded ? "chevron.up" : "chevron.down")
-                        Text(isImageExpanded ? "收起图片" : "展开图片")
+                        Text(isImageExpanded
+                            ? L10n.text("收起图片", "Collapse Image")
+                            : L10n.text("展开图片", "Expand Image"))
                     }
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(isImageExpanded ? Color.accentColor : Color.secondary)
                     .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(LumaTextButtonStyle(height: 30))
-                .help(isImageExpanded ? "收起图片" : "展开图片")
+                .help(isImageExpanded
+                    ? L10n.text("收起图片", "Collapse Image")
+                    : L10n.text("展开图片", "Expand Image"))
             }
         }
         .padding(.vertical, 6)
@@ -432,7 +462,7 @@ struct ClipboardEntryRow: View {
                         .foregroundStyle(.secondary)
                 }
                 .buttonStyle(LumaIconButtonStyle())
-                .help("打开")
+                .help(L10n.text("打开", "Open"))
             }
 
             Button { clipboard.toggleFavorite(entry) } label: {
@@ -440,21 +470,23 @@ struct ClipboardEntryRow: View {
                     .foregroundStyle(entry.isFavorite ? Color.yellow : Color.secondary)
             }
             .buttonStyle(LumaIconButtonStyle())
-            .help(entry.isFavorite ? "取消收藏" : "收藏")
+            .help(entry.isFavorite
+                ? L10n.text("取消收藏", "Remove Favorite")
+                : L10n.text("收藏", "Favorite"))
 
             Button { clipboard.copy(entry) } label: {
                 Image(systemName: "doc.on.doc")
                     .foregroundStyle(.secondary)
             }
             .buttonStyle(LumaIconButtonStyle())
-            .help("复制")
+            .help(L10n.text("复制", "Copy"))
 
             Button(role: .destructive) { clipboard.remove(entry) } label: {
                 Image(systemName: "trash")
                     .foregroundStyle(.red.opacity(0.8))
             }
             .buttonStyle(LumaIconButtonStyle())
-            .help("删除")
+            .help(L10n.text("删除", "Delete"))
         }
         .frame(height: 28, alignment: .top)
         .fixedSize()
@@ -483,8 +515,8 @@ struct ClipboardEntryRow: View {
                     }
                     .buttonStyle(LumaIconButtonStyle())
                     .padding(4)
-                    .help("使用 macOS Preview 查看")
-                    .accessibilityLabel("使用 macOS Preview 查看")
+                    .help(L10n.text("使用 macOS Preview 查看", "View in macOS Preview"))
+                    .accessibilityLabel(L10n.text("使用 macOS Preview 查看", "View in macOS Preview"))
                 }
                 .frame(width: 72, height: 56)
             }

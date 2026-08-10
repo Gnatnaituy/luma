@@ -20,7 +20,7 @@ struct LauncherSearchField: NSViewRepresentable {
     }
 
     static func configure(_ field: NSSearchField, coordinator: Coordinator) {
-        field.placeholderString = "搜索插件、输入算式…"
+        field.placeholderString = L10n.text("搜索插件、输入算式…", "Search plugins or enter an expression…")
         field.font = .systemFont(ofSize: 17, weight: .regular)
         field.isBezeled = false
         field.drawsBackground = false
@@ -31,6 +31,7 @@ struct LauncherSearchField: NSViewRepresentable {
 
     func updateNSView(_ field: NSSearchField, context: Context) {
         context.coordinator.parent = self
+        field.placeholderString = L10n.text("搜索插件、输入算式…", "Search plugins or enter an expression…")
         if field.stringValue != text { field.stringValue = text }
         guard context.coordinator.lastFocusRequest != focusRequest else { return }
         context.coordinator.lastFocusRequest = focusRequest

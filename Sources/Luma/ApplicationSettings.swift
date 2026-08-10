@@ -9,8 +9,8 @@ enum RecentSearchDisplayMode: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .horizontal: "横向"
-        case .vertical: "竖向"
+        case .horizontal: L10n.text("横向", "Horizontal")
+        case .vertical: L10n.text("竖向", "Vertical")
         }
     }
 }
@@ -19,10 +19,12 @@ enum RecentSearchDisplayMode: String, CaseIterable, Identifiable {
 final class ApplicationSettings: ObservableObject {
     @Published private(set) var showsStatusBarIcon: Bool
     @Published private(set) var recentSearchDisplayMode: RecentSearchDisplayMode
+    @Published private(set) var language: AppLanguage
     @Published private(set) var launchesAtLogin: Bool
     @Published private(set) var loginItemError = ""
 
     var applyHandler: ((Bool) -> Void)?
+    var languageApplyHandler: ((AppLanguage) -> Void)?
 
     private let defaults: UserDefaults
     private let statusBarIconStorageKey = "Luma.showsStatusBarIcon"
@@ -38,7 +40,11 @@ final class ApplicationSettings: ObservableObject {
         recentSearchDisplayMode = defaults
             .string(forKey: recentSearchDisplayModeStorageKey)
             .flatMap(RecentSearchDisplayMode.init(rawValue:)) ?? .vertical
+        language = defaults
+            .string(forKey: AppLanguage.storageKey)
+            .flatMap(AppLanguage.init(rawValue:)) ?? .simplifiedChinese
         launchesAtLogin = LoginItemManager.isEnabled
+        L10n.activate(language)
     }
 
     func setLaunchesAtLogin(_ enabled: Bool) {
@@ -63,5 +69,13 @@ final class ApplicationSettings: ObservableObject {
         guard recentSearchDisplayMode != mode else { return }
         recentSearchDisplayMode = mode
         defaults.set(mode.rawValue, forKey: recentSearchDisplayModeStorageKey)
+    }
+
+    func setLanguage(_ newLanguage: AppLanguage) {
+        guard language != newLanguage else { return }
+        L10n.activate(newLanguage)
+        language = newLanguage
+        defaults.set(newLanguage.rawValue, forKey: AppLanguage.storageKey)
+        languageApplyHandler?(newLanguage)
     }
 }

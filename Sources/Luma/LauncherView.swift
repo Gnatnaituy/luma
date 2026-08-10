@@ -33,6 +33,7 @@ struct LauncherView: View {
         }
         .onAppear(perform: installEscapeMonitor)
         .onDisappear(perform: removeEscapeMonitor)
+        .environment(\.locale, applicationSettings.language.locale)
     }
 
     private func installEscapeMonitor() {
@@ -63,7 +64,7 @@ struct LauncherView: View {
                         .font(.system(size: 14, weight: .bold))
                 }
                 .buttonStyle(LumaIconButtonStyle(size: 32, cornerRadius: 8))
-                .help("返回搜索")
+                .help(L10n.text("返回搜索", "Back to Search"))
             } else {
                 Image(nsImage: NSApplication.shared.applicationIconImage)
                     .resizable()
@@ -101,7 +102,7 @@ struct LauncherView: View {
                     .foregroundStyle(model.isShowingSettings ? Color.accentColor : Color.secondary)
             }
             .buttonStyle(LumaIconButtonStyle(size: 32, cornerRadius: 8))
-            .help("配置")
+            .help(L10n.text("配置", "Settings"))
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
@@ -167,7 +168,7 @@ struct RecentItemsView: View {
 
     private var verticalContent: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("最近使用")
+            Text(L10n.text("最近使用", "Recently Used"))
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 4)
@@ -191,12 +192,12 @@ struct RecentItemsView: View {
     private var horizontalContent: some View {
         VStack(alignment: .leading, spacing: 12) {
             RecentHorizontalSection(
-                title: "插件",
+                title: L10n.text("插件", "Plugins"),
                 items: model.horizontalRecentItems(of: .plugin),
                 action: activate
             )
             RecentHorizontalSection(
-                title: "应用",
+                title: L10n.text("应用", "Applications"),
                 items: model.horizontalRecentItems(of: .application),
                 action: activate
             )
@@ -223,9 +224,9 @@ private struct RecentItemRow: View {
             HStack(spacing: 12) {
                 icon
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(item.title)
+                    Text(item.plugin?.title ?? item.title)
                         .font(.system(size: 14, weight: .semibold))
-                    Text(item.subtitle)
+                    Text(item.plugin?.subtitle ?? item.subtitle)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
@@ -288,7 +289,7 @@ private struct RecentHorizontalSection: View {
                 spacing: LauncherModel.horizontalRecentItemSpacing
             ) {
                 if items.isEmpty {
-                    Text("暂无最近使用")
+                    Text(L10n.text("暂无最近使用", "No Recent Items"))
                         .font(.caption)
                         .foregroundStyle(.tertiary)
                         .frame(
@@ -316,7 +317,7 @@ private struct RecentHorizontalItem: View {
         Button(action: action) {
             VStack(spacing: 5) {
                 icon
-                Text(item.title)
+                Text(item.plugin?.title ?? item.title)
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(.primary)
                     .lineLimit(1)
@@ -330,7 +331,7 @@ private struct RecentHorizontalItem: View {
             .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 9))
         }
         .buttonStyle(.plain)
-        .help(item.title)
+        .help(item.plugin?.title ?? item.title)
     }
 
     @ViewBuilder
@@ -356,9 +357,9 @@ private struct SearchResultsView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("搜索结果").font(.title2.bold())
+                Text(L10n.text("搜索结果", "Search Results")).font(.title2.bold())
                 Spacer()
-                Text("→ 操作")
+                Text(L10n.text("→ 操作", "→ Actions"))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -375,9 +376,12 @@ private struct SearchResultsView: View {
 
                     if model.searchResults.isEmpty {
                         ContentUnavailableView(
-                            "没有匹配的结果",
+                            L10n.text("没有匹配的结果", "No Matching Results"),
                             systemImage: "magnifyingglass",
-                            description: Text("可搜索插件、App、文件或输入算式")
+                            description: Text(L10n.text(
+                                "可搜索插件、App、文件或输入算式",
+                                "Search plugins, apps, files, or enter an expression"
+                            ))
                         )
                         .padding(.top, 60)
                     }
@@ -385,14 +389,22 @@ private struct SearchResultsView: View {
             }
             if model.isShowingActions {
                 HStack(spacing: 8) {
-                    Button { model.activateSelected() } label: { Label("打开", systemImage: "return") }
+                    Button { model.activateSelected() } label: {
+                        Label(L10n.text("打开", "Open"), systemImage: "return")
+                    }
                         .buttonStyle(LumaTextButtonStyle())
-                    Button { model.copySelectedValue() } label: { Label("复制", systemImage: "doc.on.doc") }
+                    Button { model.copySelectedValue() } label: {
+                        Label(L10n.text("复制", "Copy"), systemImage: "doc.on.doc")
+                    }
                         .buttonStyle(LumaTextButtonStyle())
-                    Button { model.revealSelectedInFinder() } label: { Label("在 Finder 中显示", systemImage: "folder") }
+                    Button { model.revealSelectedInFinder() } label: {
+                        Label(L10n.text("在 Finder 中显示", "Show in Finder"), systemImage: "folder")
+                    }
                         .buttonStyle(LumaTextButtonStyle())
                     Spacer()
-                    Text("再次按 → 收起").font(.caption).foregroundStyle(.secondary)
+                    Text(L10n.text("再次按 → 收起", "Press → again to collapse"))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
                 .padding(10)
                 .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 10))
@@ -437,7 +449,7 @@ private struct UnifiedResultRow: View {
         }
         .buttonStyle(.plain)
         .contextMenu {
-            Button("打开", action: action)
+            Button(L10n.text("打开", "Open"), action: action)
         }
     }
 
@@ -470,9 +482,9 @@ private struct UnifiedResultRow: View {
 
     private var subtitle: String {
         switch result {
-        case .calculation: "计算结果 · 回车复制"
+        case .calculation: L10n.text("计算结果 · 回车复制", "Calculation · Press Return to copy")
         case .plugin(let plugin): plugin.subtitle
-        case .application(let app): app.bundleIdentifier ?? "macOS 应用程序"
+        case .application(let app): app.bundleIdentifier ?? L10n.text("macOS 应用程序", "macOS Application")
         case .file(let file): file.url.deletingLastPathComponent().path
         }
     }

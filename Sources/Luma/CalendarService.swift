@@ -24,12 +24,12 @@ struct LumaCalendarDay: Identifiable, Equatable {
     var id: Date { date }
 
     var label: String? {
-        if let holiday, holiday.kind == .workday { return "班" }
-        return holiday?.name ?? festival
+        if let holiday, holiday.kind == .workday { return L10n.text("班", "Work") }
+        return (holiday?.name ?? festival).map(LumaCalendarData.localizedName)
     }
 
     var marker: String? {
-        solarTerm ?? label
+        solarTerm.map(LumaCalendarData.localizedName) ?? label
     }
 }
 
@@ -129,7 +129,11 @@ enum LumaCalendarData {
         return schedule
     }()
 
-    static let weekdaySymbols = ["一", "二", "三", "四", "五", "六", "日"]
+    static var weekdaySymbols: [String] {
+        L10n.language == .english
+            ? ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+            : ["一", "二", "三", "四", "五", "六", "日"]
+    }
 
     static func startOfDay(_ date: Date) -> Date {
         solarCalendar.startOfDay(for: date)
@@ -160,15 +164,28 @@ enum LumaCalendarData {
     }
 
     static func monthTitle(for date: Date) -> String {
+        if L10n.language == .english {
+            let formatter = DateFormatter()
+            formatter.locale = L10n.locale
+            formatter.dateFormat = "MMMM yyyy"
+            return formatter.string(from: date)
+        }
         let components = solarCalendar.dateComponents([.year, .month], from: date)
         return String(components.year ?? 0) + "年" + String(components.month ?? 0) + "月"
     }
 
     static func yearTitle(for date: Date) -> String {
-        String(solarCalendar.component(.year, from: date)) + "年"
+        let year = String(solarCalendar.component(.year, from: date))
+        return L10n.language == .english ? year : year + "年"
     }
 
     static func fullDateText(for date: Date) -> String {
+        if L10n.language == .english {
+            let formatter = DateFormatter()
+            formatter.locale = L10n.locale
+            formatter.dateStyle = .full
+            return formatter.string(from: date)
+        }
         let components = solarCalendar.dateComponents([.year, .month, .day, .weekday], from: date)
         let weekday = components.weekday.flatMap { weekdaySymbols[safe: $0 == 1 ? 6 : $0 - 2] } ?? ""
         return String(components.year ?? 0) + "年"
@@ -212,6 +229,10 @@ enum LumaCalendarData {
         guard let month = components.month, let day = components.day,
               lunarMonthNames.indices.contains(month - 1), lunarDayNames.indices.contains(day - 1)
         else { return "" }
+
+        if L10n.language == .english {
+            return "L\(month)/\(day)"
+        }
 
         if day == 1 {
             let prefix = components.isLeapMonth == true ? "闰" : ""
@@ -261,6 +282,65 @@ enum LumaCalendarData {
     static func holidayInfo(for date: Date) -> LumaCalendarHoliday? {
         officialSchedule[dateKey(for: date)]
     }
+
+    static func localizedName(_ value: String) -> String {
+        guard L10n.language == .english else { return value }
+        return englishNames[value] ?? value
+    }
+
+    private static let englishNames: [String: String] = [
+        "元旦": "New Year's Day",
+        "情人节": "Valentine's Day",
+        "妇女节": "Women's Day",
+        "愚人节": "April Fools' Day",
+        "劳动节": "Labor Day",
+        "儿童节": "Children's Day",
+        "建党节": "CPC Founding Day",
+        "建军节": "Army Day",
+        "教师节": "Teachers' Day",
+        "国庆节": "National Day",
+        "平安夜": "Christmas Eve",
+        "圣诞节": "Christmas Day",
+        "春节": "Spring Festival",
+        "元宵节": "Lantern Festival",
+        "端午节": "Dragon Boat Festival",
+        "七夕": "Qixi Festival",
+        "中秋节": "Mid-Autumn Festival",
+        "重阳节": "Double Ninth Festival",
+        "腊八节": "Laba Festival",
+        "小年": "Little New Year",
+        "除夕": "Lunar New Year's Eve",
+        "清明节": "Qingming Festival",
+        "春节调休": "Spring Festival Workday",
+        "元旦调休": "New Year Workday",
+        "劳动节调休": "Labor Day Workday",
+        "国庆节调休": "National Day Workday",
+        "国庆节、中秋节": "National Day & Mid-Autumn Festival",
+        "小寒": "Minor Cold",
+        "大寒": "Major Cold",
+        "立春": "Start of Spring",
+        "雨水": "Rain Water",
+        "惊蛰": "Awakening of Insects",
+        "春分": "Spring Equinox",
+        "清明": "Clear and Bright",
+        "谷雨": "Grain Rain",
+        "立夏": "Start of Summer",
+        "小满": "Grain Full",
+        "芒种": "Grain in Ear",
+        "夏至": "Summer Solstice",
+        "小暑": "Minor Heat",
+        "大暑": "Major Heat",
+        "立秋": "Start of Autumn",
+        "处暑": "End of Heat",
+        "白露": "White Dew",
+        "秋分": "Autumn Equinox",
+        "寒露": "Cold Dew",
+        "霜降": "Frost's Descent",
+        "立冬": "Start of Winter",
+        "小雪": "Minor Snow",
+        "大雪": "Major Snow",
+        "冬至": "Winter Solstice"
+    ]
 
     private static func dateKey(for date: Date) -> String {
         let components = solarCalendar.dateComponents([.year, .month, .day], from: date)

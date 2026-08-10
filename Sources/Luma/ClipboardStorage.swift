@@ -14,12 +14,12 @@ enum ClipboardRetentionPeriod: String, CaseIterable, Identifiable, Codable {
 
     var title: String {
         switch self {
-        case .threeDays: "3 天"
-        case .sevenDays: "7 天"
-        case .oneMonth: "1 个月"
-        case .threeMonths: "3 个月"
-        case .sixMonths: "6 个月"
-        case .oneYear: "1 年"
+        case .threeDays: L10n.text("3 天", "3 Days")
+        case .sevenDays: L10n.text("7 天", "7 Days")
+        case .oneMonth: L10n.text("1 个月", "1 Month")
+        case .threeMonths: L10n.text("3 个月", "3 Months")
+        case .sixMonths: L10n.text("6 个月", "6 Months")
+        case .oneYear: L10n.text("1 年", "1 Year")
         }
     }
 

@@ -15,8 +15,11 @@ enum StockSymbolError: LocalizedError, Equatable {
 
     var errorDescription: String? {
         switch self {
-        case .empty: "请输入股票代码"
-        case .unsupported(let value): "无法识别“\(value)”，示例：AAPL、600115.SS、002594.SZ、0700.HK"
+        case .empty: L10n.text("请输入股票代码", "Enter a stock symbol")
+        case .unsupported(let value): L10n.text(
+            "无法识别“\(value)”，示例：AAPL、600115.SS、002594.SZ、0700.HK",
+            "Cannot recognize “\(value)”. Examples: AAPL, 600115.SS, 002594.SZ, 0700.HK"
+        )
         }
     }
 }
@@ -153,8 +156,8 @@ enum StockColorTheme: String, CaseIterable, Codable, Identifiable {
 
     var title: String {
         switch self {
-        case .greenUpRedDown: "绿涨红跌"
-        case .redUpGreenDown: "红涨绿跌"
+        case .greenUpRedDown: L10n.text("绿涨红跌", "Green Up, Red Down")
+        case .redUpGreenDown: L10n.text("红涨绿跌", "Red Up, Green Down")
         }
     }
 }
@@ -169,19 +172,19 @@ enum StockDataSource: String, CaseIterable, Codable, Identifiable {
 
     var title: String {
         switch self {
-        case .automatic: "自动"
-        case .tencent: "腾讯财经"
-        case .eastMoney: "东方财富"
-        case .sina: "新浪财经"
+        case .automatic: L10n.text("自动", "Automatic")
+        case .tencent: L10n.text("腾讯财经", "Tencent Finance")
+        case .eastMoney: L10n.text("东方财富", "East Money")
+        case .sina: L10n.text("新浪财经", "Sina Finance")
         }
     }
 
     var subtitle: String {
         switch self {
-        case .automatic: "按腾讯、东方财富、新浪顺序自动切换故障数据源"
-        case .tencent: "免密钥，支持 A 股、港股、美股与近 30 日走势"
-        case .eastMoney: "免密钥，支持 A 股、港股、美股；走势数据尽力获取"
-        case .sina: "免密钥，支持 A 股、港股、美股实时报价"
+        case .automatic: L10n.text("按腾讯、东方财富、新浪顺序自动切换故障数据源", "Automatically fail over between Tencent, East Money, and Sina")
+        case .tencent: L10n.text("免密钥，支持 A 股、港股、美股与近 30 日走势", "No key required. Supports mainland China, Hong Kong, and U.S. quotes with up to 30 days of chart data")
+        case .eastMoney: L10n.text("免密钥，支持 A 股、港股、美股；走势数据尽力获取", "No key required. Supports mainland China, Hong Kong, and U.S. quotes; chart data is best effort")
+        case .sina: L10n.text("免密钥，支持 A 股、港股、美股实时报价", "No key required. Supports mainland China, Hong Kong, and U.S. quotes")
         }
     }
 }
@@ -194,10 +197,10 @@ enum StockServiceError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .invalidResponse: "行情服务响应异常"
-        case .provider(let message): "行情服务错误：\(message)"
-        case .symbolNotFound: "未找到该股票代码"
-        case .malformedData: "行情数据格式无法解析"
+        case .invalidResponse: L10n.text("行情服务响应异常", "Unexpected market data response")
+        case .provider(let message): L10n.text("行情服务错误：\(message)", "Market data error: \(message)")
+        case .symbolNotFound: L10n.text("未找到该股票代码", "Stock symbol not found")
+        case .malformedData: L10n.text("行情数据格式无法解析", "Unable to parse market data")
         }
     }
 }
@@ -870,7 +873,10 @@ final class StockStore: ObservableObject {
         }
         save()
         if failures > 0 {
-            errorMessage = "已刷新 \(symbols.count - failures)/\(symbols.count) 个标的，\(failures) 个失败"
+            errorMessage = L10n.text(
+                "已刷新 \(symbols.count - failures)/\(symbols.count) 个标的，\(failures) 个失败",
+                "Refreshed \(symbols.count - failures)/\(symbols.count) symbols; \(failures) failed"
+            )
         }
     }
 

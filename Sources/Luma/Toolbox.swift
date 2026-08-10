@@ -32,7 +32,9 @@ enum JSONTool {
 private enum JSONToolError: LocalizedError {
     case invalidStringLiteral
 
-    var errorDescription: String? { "无法生成 JSON 字符串" }
+    var errorDescription: String? {
+        L10n.text("无法生成 JSON 字符串", "Unable to generate a JSON string")
+    }
 }
 
 enum TranslationTarget: Equatable {

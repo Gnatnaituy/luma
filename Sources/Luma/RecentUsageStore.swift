@@ -32,7 +32,7 @@ struct RecentUsageItem: Codable, Equatable, Identifiable {
         return InstalledApplication(
             url: applicationURL,
             name: title,
-            bundleIdentifier: subtitle == "macOS 应用程序" ? nil : subtitle
+            bundleIdentifier: ["macOS 应用程序", "macOS Application"].contains(subtitle) ? nil : subtitle
         )
     }
 
@@ -52,7 +52,7 @@ struct RecentUsageItem: Codable, Equatable, Identifiable {
             pluginIdentifier: nil,
             applicationURL: application.url,
             title: application.name,
-            subtitle: application.bundleIdentifier ?? "macOS 应用程序"
+            subtitle: application.bundleIdentifier ?? L10n.text("macOS 应用程序", "macOS Application")
         )
     }
 }

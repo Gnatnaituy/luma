@@ -43,6 +43,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         applicationSettings.applyHandler = { [weak self] isVisible in
             self?.setStatusItemVisible(isVisible)
         }
+        applicationSettings.languageApplyHandler = { [weak self] _ in
+            self?.updateStatusMenuTitles()
+        }
         setStatusItemVisible(applicationSettings.showsStatusBarIcon)
         clipboard.start()
         installedApps.start()
@@ -147,14 +150,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
         let menu = NSMenu()
         let show = NSMenuItem(
-            title: "显示 Luma（\(shortcutSettings.shortcut.displayString)）",
+            title: L10n.text(
+                "显示 Luma（\(shortcutSettings.shortcut.displayString)）",
+                "Show Luma (\(shortcutSettings.shortcut.displayString))"
+            ),
             action: #selector(showFromMenu),
             keyEquivalent: ""
         )
         show.target = self
         menu.addItem(show)
         menu.addItem(.separator())
-        let quit = NSMenuItem(title: "退出 Luma", action: #selector(quitApp), keyEquivalent: "q")
+        let quit = NSMenuItem(
+            title: L10n.text("退出 Luma", "Quit Luma"),
+            action: #selector(quitApp),
+            keyEquivalent: "q"
+        )
         quit.target = self
         menu.addItem(quit)
         item.menu = menu
@@ -214,11 +224,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         guard let panel, !isShowingPastePermissionAlert else { return }
         isShowingPastePermissionAlert = true
         let alert = NSAlert()
-        alert.messageText = "需要允许 Luma 发送粘贴快捷键"
-        alert.informativeText = "条目已复制到剪贴板。请在“系统设置 → 隐私与安全性 → 辅助功能”中启用 Luma，然后再次双击条目。"
+        alert.messageText = L10n.text(
+            "需要允许 Luma 发送粘贴快捷键",
+            "Allow Luma to send the paste shortcut"
+        )
+        alert.informativeText = L10n.text(
+            "条目已复制到剪贴板。请在“系统设置 → 隐私与安全性 → 辅助功能”中启用 Luma，然后再次双击条目。",
+            "The item was copied to the clipboard. Enable Luma in System Settings → Privacy & Security → Accessibility, then double-click the item again."
+        )
         alert.alertStyle = .informational
-        alert.addButton(withTitle: "打开系统设置")
-        alert.addButton(withTitle: "稍后")
+        alert.addButton(withTitle: L10n.text("打开系统设置", "Open System Settings"))
+        alert.addButton(withTitle: L10n.text("稍后", "Later"))
         alert.beginSheetModal(for: panel) { [weak self] response in
             self?.isShowingPastePermissionAlert = false
             guard response == .alertFirstButtonReturn,
@@ -282,7 +298,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         if let manager = makeHotKey(for: shortcut) {
             hotKey = manager
             registeredShortcut = shortcut
-            updateStatusMenuTitle()
+            updateStatusMenuTitles()
             return true
         }
 
@@ -343,8 +359,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         return identifier
     }
 
-    private func updateStatusMenuTitle() {
-        statusItem?.menu?.item(at: 0)?.title = "显示 Luma（\(registeredShortcut.displayString)）"
+    private func updateStatusMenuTitles() {
+        statusItem?.menu?.item(at: 0)?.title = L10n.text(
+            "显示 Luma（\(registeredShortcut.displayString)）",
+            "Show Luma (\(registeredShortcut.displayString))"
+        )
+        statusItem?.menu?.item(at: 2)?.title = L10n.text("退出 Luma", "Quit Luma")
     }
 
     func windowDidResignKey(_ notification: Notification) {

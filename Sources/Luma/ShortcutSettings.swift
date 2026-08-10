@@ -35,7 +35,7 @@ struct GlobalShortcut: Codable, Equatable {
         if modifiers & UInt32(optionKey) != 0 { result += "⌥" }
         if modifiers & UInt32(shiftKey) != 0 { result += "⇧" }
         if modifiers & UInt32(cmdKey) != 0 { result += "⌘" }
-        let key = Self.keyNames[keyCode] ?? "按键 \(keyCode)"
+        let key = Self.keyNames[keyCode] ?? L10n.text("按键 \(keyCode)", "Key \(keyCode)")
         return result + (key.count == 1 ? key.uppercased() : " " + key)
     }
 
@@ -126,7 +126,10 @@ final class ShortcutSettings: ObservableObject {
             return
         }
         guard applyHandler?(newShortcut) ?? true else {
-            errorMessage = "该快捷键已被其他应用占用，请换一个组合。"
+            errorMessage = L10n.text(
+                "该快捷键已被其他应用占用，请换一个组合。",
+                "That shortcut is used by another app. Choose a different combination."
+            )
             return
         }
         shortcut = newShortcut
@@ -137,7 +140,10 @@ final class ShortcutSettings: ObservableObject {
     }
 
     func reportRegistrationFailure() {
-        errorMessage = "当前快捷键已被其他应用占用，请录入新的组合。"
+        errorMessage = L10n.text(
+            "当前快捷键已被其他应用占用，请录入新的组合。",
+            "The current shortcut is used by another app. Record a new combination."
+        )
     }
 
     @discardableResult
@@ -216,7 +222,7 @@ final class ShortcutRecorderButton: NSButton {
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
-        title = "设置快捷键"
+        title = L10n.text("设置快捷键", "Set Shortcut")
         bezelStyle = .shadowlessSquare
         isBordered = false
         controlSize = .large
@@ -249,12 +255,12 @@ final class ShortcutRecorderButton: NSButton {
 
     func updateShortcut(_ shortcut: GlobalShortcut?) {
         self.shortcut = shortcut
-        if !isRecording { title = shortcut?.displayString ?? "设置快捷键" }
+        if !isRecording { title = shortcut?.displayString ?? L10n.text("设置快捷键", "Set Shortcut") }
     }
 
     @objc private func beginRecording() {
         isRecording = true
-        title = "请按新快捷键…"
+        title = L10n.text("请按新快捷键…", "Press a new shortcut…")
         window?.makeFirstResponder(self)
     }
 
@@ -269,7 +275,7 @@ final class ShortcutRecorderButton: NSButton {
         }
         guard let newShortcut = GlobalShortcut(event: event) else {
             NSSound.beep()
-            title = "需包含 ⌘、⌥ 或 ⌃"
+            title = L10n.text("需包含 ⌘、⌥ 或 ⌃", "Include ⌘, ⌥, or ⌃")
             return
         }
         shortcut = newShortcut
@@ -290,7 +296,7 @@ final class ShortcutRecorderButton: NSButton {
 
     private func finishRecording() {
         isRecording = false
-        title = shortcut?.displayString ?? "设置快捷键"
+        title = shortcut?.displayString ?? L10n.text("设置快捷键", "Set Shortcut")
     }
 
     private func updateButtonBackground(isPressed: Bool) {
