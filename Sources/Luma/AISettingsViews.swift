@@ -12,8 +12,8 @@ struct AIManagementView: View {
             providerDetail
         }
         .frame(maxWidth: .infinity, minHeight: 420, alignment: .topLeading)
-        .background(Color.primary.opacity(0.018), in: RoundedRectangle(cornerRadius: 12))
-        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.primary.opacity(0.1)))
+        .background(Color.primary.opacity(0.018), in: RoundedRectangle(cornerRadius: LumaRadius.card))
+        .overlay(RoundedRectangle(cornerRadius: LumaRadius.card).stroke(Color.primary.opacity(0.1)))
         .onChange(of: settings.selectedProviderID) {
             revealsAPIKey = false
             connectionState = .idle
@@ -366,8 +366,8 @@ struct TranslationSettingsView: View {
                     }
                 }
                 .padding(16)
-                .background(Color.primary.opacity(0.025), in: RoundedRectangle(cornerRadius: 12))
-                .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.primary.opacity(0.1)))
+                .background(Color.primary.opacity(0.025), in: RoundedRectangle(cornerRadius: LumaRadius.card))
+                .overlay(RoundedRectangle(cornerRadius: LumaRadius.card).stroke(Color.primary.opacity(0.1)))
             } else {
                 Label(
                     L10n.text(
@@ -380,7 +380,7 @@ struct TranslationSettingsView: View {
                     .foregroundStyle(.secondary)
                     .padding(16)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color.primary.opacity(0.025), in: RoundedRectangle(cornerRadius: 12))
+                    .background(Color.primary.opacity(0.025), in: RoundedRectangle(cornerRadius: LumaRadius.card))
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)

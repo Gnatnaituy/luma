@@ -39,6 +39,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         configureApplicationIcon()
         NSApp.setActivationPolicy(.accessory)
+        model.recentDisplayMode = applicationSettings.recentSearchDisplayMode
         buildPanel()
         applicationSettings.applyHandler = { [weak self] isVisible in
             self?.setStatusItemVisible(isVisible)
@@ -134,7 +135,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         panel.isOpaque = false
         panel.hasShadow = true
         LauncherPanelAppearance.hideWindowControls(in: panel)
-        panel.minSize = NSSize(width: 920, height: 58)
+        panel.minSize = NSSize(width: 920, height: 270)
         panel.maxSize = NSSize(width: 920, height: 1_200)
         panel.delegate = self
         panel.contentView = NSHostingView(rootView: content)
@@ -265,6 +266,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             .receive(on: RunLoop.main)
             .sink { [weak self] mode in
                 guard let self else { return }
+                self.model.recentDisplayMode = mode
                 self.resizePanel(
                     to: self.model.preferredWindowHeight(recentDisplayMode: mode),
                     animated: self.panel?.isVisible == true

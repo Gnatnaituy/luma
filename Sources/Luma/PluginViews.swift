@@ -75,7 +75,7 @@ struct ClipboardPluginView: View {
                                     .font(.caption.weight(.medium))
                                     .padding(.horizontal, 11)
                                     .padding(.vertical, 6)
-                                    .background(filter == item ? Color.accentColor : Color.primary.opacity(0.06), in: Capsule())
+                                    .background(filter == item ? Color.accentColor : LumaTone.hoverFill, in: Capsule())
                                     .foregroundStyle(filter == item ? Color.white : Color.primary)
                             }
                             .buttonStyle(.plain)

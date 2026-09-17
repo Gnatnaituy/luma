@@ -420,7 +420,7 @@ private struct StockDetailView: View {
                     }
                 }
                 .padding(12)
-                .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 10))
+                .background(LumaTone.cardFill, in: RoundedRectangle(cornerRadius: 10))
 
                 StockDayRange(stock: stock, colorTheme: colorTheme)
 
@@ -562,7 +562,7 @@ private struct StockPeriodSelector: View {
             }
         }
         .padding(3)
-        .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 9))
+        .background(LumaTone.controlFill, in: RoundedRectangle(cornerRadius: 9))
     }
 }
 
@@ -606,7 +606,7 @@ private struct StockDayRange: View {
             .foregroundStyle(.secondary)
         }
         .padding(12)
-        .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 10))
+        .background(LumaTone.cardFill, in: RoundedRectangle(cornerRadius: 10))
     }
 
     private func formatPrice(_ value: Double) -> String {
@@ -635,7 +635,7 @@ private struct StockMetric: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(9)
-        .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 8))
+        .background(LumaTone.controlFill, in: RoundedRectangle(cornerRadius: 8))
     }
 }
 

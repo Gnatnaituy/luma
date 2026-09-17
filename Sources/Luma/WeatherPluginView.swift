@@ -336,7 +336,7 @@ private struct WeatherDetailView: View {
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             ),
-            in: RoundedRectangle(cornerRadius: 12)
+            in: RoundedRectangle(cornerRadius: LumaRadius.card)
         )
     }
 
@@ -368,7 +368,7 @@ private struct WeatherDetailView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, minHeight: 62)
-                    .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 9))
+                    .background(LumaTone.cardFill, in: RoundedRectangle(cornerRadius: 9))
             } else {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
@@ -389,7 +389,7 @@ private struct WeatherDetailView: View {
                             }
                             .frame(width: 58)
                             .padding(.vertical, 9)
-                            .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 9))
+                            .background(LumaTone.cardFill, in: RoundedRectangle(cornerRadius: 9))
                         }
                     }
                 }
@@ -488,6 +488,6 @@ private struct WeatherMetric: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(9)
-        .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 8))
+        .background(LumaTone.controlFill, in: RoundedRectangle(cornerRadius: 8))
     }
 }

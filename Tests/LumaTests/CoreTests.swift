@@ -1009,7 +1009,18 @@ struct CoreTests {
             }
         )
         navigationModel.prepareForPresentation()
-        try expect(navigationModel.presentation == .search && navigationModel.preferredWindowHeight == 58, "launcher opens a thinner search-only panel")
+        try expect(
+            navigationModel.presentation == .search
+                && navigationModel.recentTileItems.isEmpty
+                && navigationModel.preferredWindowHeight
+                    == LauncherModel.recentPanelHeight(sections: navigationModel.recentSections)
+                && navigationModel.preferredWindowHeight
+                    == LumaChromeMetrics.headerHeight + LumaChromeMetrics.hairline
+                        + LumaGridMetrics.gridTopPadding
+                        + LumaGridMetrics.gridBottomPadding
+                        + LumaGridMetrics.emptyStateHeight,
+            "launcher opens on the recent grid with room for the empty state"
+        )
         navigationModel.query = "json"
         try expect(navigationModel.presentation == .results && navigationModel.preferredWindowHeight == 430, "launcher expands for results")
         navigationModel.activateSelected()
@@ -1023,8 +1034,10 @@ struct CoreTests {
         navigationModel.returnToSearch()
         try expect(
             navigationModel.recentItems.first?.plugin == .json
-                && navigationModel.preferredWindowHeight == CGFloat(96 + navigationModel.recentItems.count * 52),
-            "recent plugins appear below the search field and expand the search panel"
+                && navigationModel.recentTileItems.count == 1
+                && navigationModel.preferredWindowHeight
+                    == LauncherModel.recentPanelHeight(sections: navigationModel.recentSections),
+            "recent plugins appear as grid tiles below the search field"
         )
         for index in 0..<10 {
             let recentAppURL = appFixtureRoot
@@ -1040,9 +1053,21 @@ struct CoreTests {
         }
         try expect(
             navigationModel.recentItems.count == 9
-                && navigationModel.preferredWindowHeight == CGFloat(96 + 9 * 52),
-            "search page shows at most nine recent items and fits them without scrolling"
+                && LumaGridMetrics.columns == 7
+                && LumaGridMetrics.rows(count: 9) == 2
+                && navigationModel.preferredWindowHeight
+                    == LauncherModel.recentPanelHeight(sections: navigationModel.recentSections),
+            "search page shows at most nine recent items as a two-row grid"
         )
+        let flatHosting = NSHostingView(
+            rootView: RecentItemsView(model: navigationModel)
+                .frame(
+                    width: 920,
+                    height: navigationModel.preferredWindowHeight - LumaChromeMetrics.headerHeight
+                )
+        )
+        flatHosting.layoutSubtreeIfNeeded()
+        try expect(!containsScrollView(in: flatHosting), "recent usage fits its content without a scroll container")
         for index in 10..<20 {
             let recentAppURL = appFixtureRoot
                 .appendingPathComponent("RecentApp\(index).app", isDirectory: true)
@@ -1058,7 +1083,7 @@ struct CoreTests {
         try expect(
             navigationModel.horizontalRecentItems(of: .application).count == 15
                 && navigationModel.recentItems.count == 9,
-            "horizontal applications use their own 15-item limit without changing the vertical 9-item limit"
+            "grouped applications use their own 15-item limit without changing the flat 9-item limit"
         )
         for plugin in Plugin.allCases {
             recentUsage.record(plugin: plugin)
@@ -1067,40 +1092,92 @@ struct CoreTests {
             navigationModel.horizontalRecentItems(of: .plugin).count == min(15, Plugin.allCases.count)
                 && navigationModel.horizontalRecentItems(of: .application).count == 15
                 && navigationModel.recentItems.count == 9,
-            "horizontal plugins and applications keep independent limits"
+            "grouped plugins and applications keep independent limits"
         )
-        let recentHosting = NSHostingView(
-            rootView: RecentItemsView(model: navigationModel, displayMode: .vertical)
-                .frame(width: 920, height: navigationModel.preferredWindowHeight - 58)
-        )
-        recentHosting.layoutSubtreeIfNeeded()
-        try expect(!containsScrollView(in: recentHosting), "recent usage fits its content without a scroll container")
+        navigationModel.recentDisplayMode = .horizontal
+        let groupedSections = navigationModel.recentSections
         try expect(
-            LauncherModel.horizontalRecentPerRow == 11
-                && LauncherModel.horizontalRecentRows(count: 11) == 1
-                && LauncherModel.horizontalRecentRows(count: 15) == 2,
-            "horizontal recent usage wraps after eleven fixed-width items"
+            groupedSections.map(\.id) == ["recent.plugins", "recent.applications"]
+                && groupedSections.allSatisfy { $0.title != nil }
+                && LumaGridMetrics.rows(count: groupedSections[1].items.count) == 3,
+            "grouped layout splits plugins and applications into titled grid sections"
         )
         try expect(
-            navigationModel.preferredWindowHeight(recentDisplayMode: .horizontal)
-                == LauncherModel.horizontalRecentPanelHeight(
-                    pluginCount: navigationModel.horizontalRecentItems(of: .plugin).count,
-                    applicationCount: navigationModel.horizontalRecentItems(of: .application).count
-                ),
-            "horizontal recent usage derives panel height from wrapped rows"
+            navigationModel.preferredWindowHeight
+                == LauncherModel.recentPanelHeight(sections: groupedSections),
+            "grouped layout derives panel height from titled grid rows"
         )
-        let horizontalRecentHosting = NSHostingView(
-            rootView: RecentItemsView(model: navigationModel, displayMode: .horizontal)
+        let groupedHosting = NSHostingView(
+            rootView: RecentItemsView(model: navigationModel)
                 .frame(
                     width: 920,
-                    height: navigationModel.preferredWindowHeight(recentDisplayMode: .horizontal) - 58
+                    height: navigationModel.preferredWindowHeight - LumaChromeMetrics.headerHeight
                 )
         )
-        horizontalRecentHosting.layoutSubtreeIfNeeded()
+        groupedHosting.layoutSubtreeIfNeeded()
         try expect(
-            !containsScrollView(in: horizontalRecentHosting),
-            "horizontal recent usage wraps to new lines instead of scrolling"
+            !containsScrollView(in: groupedHosting),
+            "grouped recent usage wraps into grid rows instead of scrolling"
         )
+        navigationModel.recentDisplayMode = .vertical
+        try expect(
+            navigationModel.recentTileItems.first?.title == Plugin.allCases.last?.title,
+            "flat layout keeps a single most-recent-first grid"
+        )
+        navigationModel.moveSelectionHorizontally(1)
+        try expect(
+            navigationModel.recentSelection == 1 && navigationModel.isRecentSelectionActive,
+            "right arrow moves one grid column and reveals the keyboard selection"
+        )
+        navigationModel.moveSelection(1)
+        try expect(
+            navigationModel.recentSelection == LumaGridMetrics.columns + 1,
+            "down arrow moves one grid row on the home grid"
+        )
+        navigationModel.moveSelection(1)
+        try expect(
+            navigationModel.recentSelection == LumaGridMetrics.columns + 1,
+            "down arrow stops on the last home grid row"
+        )
+        navigationModel.moveSelectionHorizontally(-1)
+        try expect(
+            navigationModel.recentSelection == LumaGridMetrics.columns,
+            "left arrow moves back one grid column"
+        )
+        navigationModel.recentSelection = 0
+        navigationModel.activateSelected()
+        try expect(
+            navigationModel.presentation == .plugin,
+            "Enter opens the selected home grid tile"
+        )
+        navigationModel.returnToSearch()
+        try expect(
+            navigationModel.recentSelection == 0 && !navigationModel.isRecentSelectionActive,
+            "returning to the home grid resets the selection and its highlight"
+        )
+        navigationModel.recentUsage.record(
+            application: InstalledApplication(
+                url: fakeSafari,
+                name: "Safari",
+                bundleIdentifier: "com.apple.Safari"
+            )
+        )
+        navigationModel.recentDisplayMode = .horizontal
+        navigationModel.returnToSearch()
+        let safariIndex = navigationModel.recentTileItems.firstIndex { $0.title == "Safari" }
+        try expect(
+            safariIndex == Plugin.allCases.count,
+            "grouped layout lists recent apps after the recent plugins"
+        )
+        navigationModel.recentSelection = safariIndex ?? 0
+        navigationModel.activateSelected()
+        try expect(
+            openedApplicationURL?.resolvingSymlinksInPath().path == fakeSafari.resolvingSymlinksInPath().path
+                && navigationModel.presentation == .search,
+            "opening a home grid app launches it and returns to the home grid"
+        )
+        navigationModel.recentDisplayMode = .vertical
+        navigationModel.returnToSearch()
         navigationModel.showSettings()
         try expect(navigationModel.presentation == .settings && navigationModel.selectedPlugin == nil, "settings is a secondary page")
         try expect(
@@ -1119,7 +1196,7 @@ struct CoreTests {
             focusRequest: 0,
             onSubmit: navigationModel.activateSelected,
             onMove: navigationModel.moveSelection,
-            onActions: navigationModel.toggleActions,
+            onHorizontalMove: navigationModel.moveSelectionHorizontally,
             onEscape: { _ = navigationModel.handleEscape() }
         )
         let searchCoordinator = searchBridge.makeCoordinator()

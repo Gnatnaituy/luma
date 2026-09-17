@@ -9,8 +9,15 @@ enum RecentSearchDisplayMode: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .horizontal: L10n.text("横向", "Horizontal")
-        case .vertical: L10n.text("竖向", "Vertical")
+        case .horizontal: L10n.text("分组", "Grouped")
+        case .vertical: L10n.text("平铺", "Flat")
+        }
+    }
+
+    var detail: String {
+        switch self {
+        case .horizontal: L10n.text("插件与应用各自成组", "Plugins and apps in separate groups")
+        case .vertical: L10n.text("最近使用混排成一片网格", "Recent items in one grid")
         }
     }
 }

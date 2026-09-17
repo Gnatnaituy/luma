@@ -244,7 +244,7 @@ struct TranslationPluginView: View {
                 onSubmit: submitTranslation
             )
                 .padding(10)
-                .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 10))
+                .background(LumaTone.controlFill, in: RoundedRectangle(cornerRadius: 10))
                 .overlay(RoundedRectangle(cornerRadius: 10).stroke(.quaternary))
                 .onChange(of: input) { _, value in
                     updateTargetLanguage(for: value)
@@ -442,7 +442,7 @@ struct CodePluginView: View {
                 .font(.system(size: 13, design: .monospaced))
                 .focused($isInputFocused)
                 .padding(10)
-                .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 10))
+                .background(LumaTone.controlFill, in: RoundedRectangle(cornerRadius: 10))
                 .overlay(RoundedRectangle(cornerRadius: 10).stroke(.quaternary))
             TextEditor(text: $output)
                 .font(.system(size: 13, design: .monospaced))
