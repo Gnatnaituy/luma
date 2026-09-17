@@ -42,6 +42,8 @@ cd luma
 
 安装脚本会完成 Release 构建与代码签名，验证暂存副本、备份旧版本并替换 `/Applications/Luma.app`，然后启动新版本。新副本移动失败时会恢复备份。
 
+构建脚本优先使用当前默认 SDK。若机器上只有 Command Line Tools（没装 Xcode），当前 SDK 的 SwiftUI 把这些属性做成了宏，展开需要 Xcode 才提供的宏插件；脚本会自动改用仍以属性包装器实现它们的已安装 SDK（见 `scripts/select-sdk.sh`），`scripts/test-core.sh` 用同样的方式让 `swift test` 可用。装上 Xcode 后这一步自动跳过。
+
 安装完成后，按 `⌥ Space` 唤起或隐藏 Luma。首次使用粘贴、读取选中文本或窗口管理前，请在“系统设置 → 隐私与安全性 → 辅助功能”中启用 Luma。
 
 > 当前安装包由本机源码构建并使用 ad-hoc 签名，不是 Developer ID 签名或 Apple 公证的发行包。

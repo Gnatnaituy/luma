@@ -11,11 +11,22 @@ export CLANG_MODULE_CACHE_PATH="$BUILD_ROOT/ModuleCache"
 mkdir -p "$CLANG_MODULE_CACHE_PATH" "$BUILD_ROOT/release"
 
 SOURCE_FILES=("$PROJECT_DIR"/Sources/Luma/*.swift)
+
+# 默认 SDK 的 SwiftUI 需要 Xcode 才有的宏插件时，回退到仍以属性包装器实现这些
+# 属性的已安装 SDK（详见 scripts/select-sdk.sh）。装了 Xcode 时这里为空。
+SDK_PATH="$("$PROJECT_DIR/scripts/select-sdk.sh" || true)"
+SDK_ARGS=()
+if [[ -n "$SDK_PATH" ]]; then
+  SDK_ARGS=(-sdk "$SDK_PATH")
+  echo "note: building with $SDK_PATH" >&2
+fi
+
 swiftc \
   -parse-as-library \
   -swift-version 5 \
   -O \
   -target arm64-apple-macosx14.4 \
+  "${SDK_ARGS[@]}" \
   -framework AppKit \
   -framework SwiftUI \
   -framework Carbon \
