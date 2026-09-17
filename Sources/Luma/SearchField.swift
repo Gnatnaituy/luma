@@ -6,7 +6,8 @@ struct LauncherSearchField: NSViewRepresentable {
     let focusRequest: Int
     let onSubmit: () -> Void
     let onMove: (Int) -> Void
-    let onActions: () -> Void
+    /// 左右方向键；返回是否消费按键，未消费时交还文本光标移动。
+    let onHorizontalMove: (Int) -> Bool
     let onEscape: () -> Void
 
     func makeCoordinator() -> Coordinator {
@@ -63,8 +64,10 @@ struct LauncherSearchField: NSViewRepresentable {
                 parent.onMove(-1); return true
             case #selector(NSResponder.moveDown(_:)):
                 parent.onMove(1); return true
+            case #selector(NSResponder.moveLeft(_:)):
+                return parent.onHorizontalMove(-1)
             case #selector(NSResponder.moveRight(_:)):
-                parent.onActions(); return true
+                return parent.onHorizontalMove(1)
             case #selector(NSResponder.cancelOperation(_:)):
                 parent.onEscape(); return true
             default:

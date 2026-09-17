@@ -237,7 +237,7 @@ struct SettingsView: View {
                     .renderingMode(.template)
                     .foregroundStyle(Color.primary)
                     .frame(width: 34, height: 34)
-                    .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 8))
+                    .background(LumaTone.controlFill, in: RoundedRectangle(cornerRadius: 8))
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(L10n.text("状态栏图标", "Menu Bar Icon"))
@@ -268,7 +268,7 @@ struct SettingsView: View {
                 Image(systemName: "power")
                     .font(.system(size: 16, weight: .semibold))
                     .frame(width: 34, height: 34)
-                    .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 8))
+                    .background(LumaTone.controlFill, in: RoundedRectangle(cornerRadius: 8))
                 VStack(alignment: .leading, spacing: 4) {
                     Text(L10n.text("登录时启动", "Launch at Login")).font(.headline)
                     Text(L10n.text(
@@ -298,7 +298,7 @@ struct SettingsView: View {
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(Color.primary)
                     .frame(width: 34, height: 34)
-                    .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 8))
+                    .background(LumaTone.controlFill, in: RoundedRectangle(cornerRadius: 8))
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(L10n.text("界面语言", "Language"))
@@ -329,14 +329,14 @@ struct SettingsView: View {
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(Color.primary)
                     .frame(width: 34, height: 34)
-                    .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 8))
+                    .background(LumaTone.controlFill, in: RoundedRectangle(cornerRadius: 8))
 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(L10n.text("最近搜索展示", "Recent Items Layout"))
+                    Text(L10n.text("最近使用排列", "Recent Items Layout"))
                         .font(.headline)
                     Text(L10n.text(
-                        "设置搜索首页中最近使用的插件与应用排列方式。",
-                        "Choose how recent plugins and apps are arranged on the search home screen."
+                        "设置首页最近使用的插件与应用排列方式。",
+                        "Choose how recent plugins and apps are arranged on the home screen."
                     ))
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -352,6 +352,7 @@ struct SettingsView: View {
                             action: { applicationSettings.setRecentSearchDisplayMode(mode) }
                         )
                         .frame(minWidth: 90)
+                        .help(mode.detail)
                     }
                 }
             }
@@ -363,7 +364,7 @@ struct SettingsView: View {
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(Color.primary)
                     .frame(width: 34, height: 34)
-                    .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 8))
+                    .background(LumaTone.controlFill, in: RoundedRectangle(cornerRadius: 8))
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(L10n.text("配置备份", "Configuration Backup")).font(.headline)
@@ -388,7 +389,7 @@ struct SettingsView: View {
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(Color.primary)
                     .frame(width: 34, height: 34)
-                    .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 8))
+                    .background(LumaTone.controlFill, in: RoundedRectangle(cornerRadius: 8))
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(L10n.text("版本", "Version")).font(.headline)

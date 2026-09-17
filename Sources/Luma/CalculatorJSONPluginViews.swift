@@ -97,7 +97,7 @@ struct CalculatorPluginView: View {
                     .padding(.horizontal, 12)
                     .frame(height: 40)
                     .background(
-                        Color.primary.opacity(0.035),
+                        LumaTone.cardFill,
                         in: RoundedRectangle(cornerRadius: 8)
                     )
                 }
@@ -138,7 +138,7 @@ struct JSONPluginView: View {
     var body: some View {
         VStack(spacing: 12) {
             JSONSyntaxEditor(text: $input, autofocus: true)
-                .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 10))
+                .background(LumaTone.controlFill, in: RoundedRectangle(cornerRadius: 10))
                 .overlay(RoundedRectangle(cornerRadius: 10).stroke(.quaternary))
 
             HStack {

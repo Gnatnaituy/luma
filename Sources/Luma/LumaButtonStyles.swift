@@ -7,8 +7,8 @@ enum LumaButtonEmphasis {
 }
 
 struct LumaIconButtonStyle: ButtonStyle {
-    var size: CGFloat = 28
-    var cornerRadius: CGFloat = 7
+    var size: CGFloat = 30
+    var cornerRadius: CGFloat = LumaRadius.control
 
     @Environment(\.isEnabled) private var isEnabled
 
@@ -17,9 +17,12 @@ struct LumaIconButtonStyle: ButtonStyle {
             .font(.system(size: 12, weight: .semibold))
             .frame(width: size, height: size)
             .background(
-                Color.primary.opacity(configuration.isPressed ? 0.10 : 0.045),
+                configuration.isPressed ? LumaTone.controlFillPressed : LumaTone.controlFill,
                 in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
             )
+            .overlay {
+                LumaRimStroke(cornerRadius: cornerRadius)
+            }
             .contentShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
             .scaleEffect(configuration.isPressed ? 0.96 : 1)
             .opacity(isEnabled ? 1 : 0.42)
@@ -29,7 +32,7 @@ struct LumaIconButtonStyle: ButtonStyle {
 
 struct LumaTextButtonStyle: ButtonStyle {
     var emphasis: LumaButtonEmphasis = .regular
-    var height: CGFloat = 30
+    var height: CGFloat = 32
 
     @Environment(\.isEnabled) private var isEnabled
 
@@ -38,12 +41,17 @@ struct LumaTextButtonStyle: ButtonStyle {
             .font(.system(size: 13, weight: .semibold))
             .lineLimit(1)
             .fixedSize(horizontal: true, vertical: false)
-            .padding(.horizontal, 12)
+            .padding(.horizontal, 13)
             .frame(minHeight: height)
             .foregroundStyle(foregroundColor)
             .background(backgroundColor(isPressed: configuration.isPressed))
-            .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
-            .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+            .overlay {
+                if emphasis == .regular {
+                    LumaRimStroke(cornerRadius: LumaRadius.control)
+                }
+            }
+            .clipShape(RoundedRectangle(cornerRadius: LumaRadius.control, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: LumaRadius.control, style: .continuous))
             .scaleEffect(configuration.isPressed ? 0.98 : 1)
             .opacity(isEnabled ? 1 : 0.42)
             .animation(LumaMotion.press, value: configuration.isPressed)
@@ -52,7 +60,7 @@ struct LumaTextButtonStyle: ButtonStyle {
     private func backgroundColor(isPressed: Bool) -> Color {
         switch emphasis {
         case .regular:
-            Color.primary.opacity(isPressed ? 0.10 : 0.045)
+            isPressed ? LumaTone.controlFillPressed : LumaTone.controlFill
         case .primary:
             Color.accentColor.opacity(isPressed ? 0.78 : 1)
         case .destructive:
@@ -70,7 +78,7 @@ struct LumaTextButtonStyle: ButtonStyle {
 }
 
 struct LumaTextFieldStyle: TextFieldStyle {
-    var height: CGFloat = 30
+    var height: CGFloat = 32
 
     func _body(configuration: TextField<Self._Label>) -> some View {
         configuration
@@ -79,8 +87,8 @@ struct LumaTextFieldStyle: TextFieldStyle {
             .padding(.trailing, 10)
             .frame(minHeight: height)
             .background(
-                Color.primary.opacity(0.045),
-                in: RoundedRectangle(cornerRadius: 7, style: .continuous)
+                LumaTone.controlFill,
+                in: RoundedRectangle(cornerRadius: LumaRadius.control, style: .continuous)
             )
     }
 }
@@ -103,8 +111,8 @@ struct LumaSelectionButton: View {
             .padding(.horizontal, 12)
             .frame(maxWidth: .infinity, minHeight: 32, alignment: .leading)
             .background(
-                isSelected ? Color.accentColor.opacity(0.11) : Color.primary.opacity(0.045),
-                in: RoundedRectangle(cornerRadius: 7, style: .continuous)
+                isSelected ? Color.accentColor.opacity(0.11) : LumaTone.controlFill,
+                in: RoundedRectangle(cornerRadius: LumaRadius.control, style: .continuous)
             )
         }
         .buttonStyle(.plain)
@@ -226,7 +234,7 @@ struct LumaMenuPicker<Value: Hashable>: View {
         .frame(maxWidth: .infinity)
         .frame(height: 30)
         .background(
-            Color.primary.opacity(0.045),
+            LumaTone.controlFill,
             in: RoundedRectangle(cornerRadius: 7, style: .continuous)
         )
         .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
@@ -249,7 +257,7 @@ struct LumaToggleStyle: ToggleStyle {
             .padding(.horizontal, 11)
             .frame(minHeight: 30)
             .background(
-                configuration.isOn ? Color.accentColor.opacity(0.11) : Color.primary.opacity(0.045),
+                configuration.isOn ? Color.accentColor.opacity(0.11) : LumaTone.controlFill,
                 in: RoundedRectangle(cornerRadius: 7, style: .continuous)
             )
         }

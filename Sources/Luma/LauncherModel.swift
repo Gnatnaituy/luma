@@ -1,11 +1,67 @@
-import Combine
 import AppKit
+import Combine
+import SwiftUI
 
 enum LauncherPresentation: Equatable {
     case search
     case results
     case plugin
     case settings
+}
+
+/// 首页「最近使用」网格中的一格，可能来自插件或本机 App。
+struct RecentTileItem: Identifiable {
+    enum Source: Equatable {
+        case plugin(Plugin)
+        case application(InstalledApplication)
+    }
+
+    let source: Source
+    let title: String
+
+    var id: String {
+        switch source {
+        case .plugin(let plugin): "plugin:\(plugin.id)"
+        case .application(let application): "application:\(application.id)"
+        }
+    }
+
+    var symbol: String? {
+        guard case .plugin(let plugin) = source else { return nil }
+        return plugin.symbol
+    }
+
+    var tint: Color {
+        guard case .plugin(let plugin) = source else { return .accentColor }
+        return plugin.tint
+    }
+
+    var applicationURL: URL? {
+        guard case .application(let application) = source else { return nil }
+        return application.url
+    }
+
+    static func plugin(_ plugin: Plugin) -> RecentTileItem {
+        RecentTileItem(source: .plugin(plugin), title: plugin.title)
+    }
+
+    static func application(_ application: InstalledApplication) -> RecentTileItem {
+        RecentTileItem(source: .application(application), title: application.name)
+    }
+}
+
+/// 首页网格的一段；平铺布局只有一段且不带标题。
+struct RecentTileSection: Identifiable {
+    let id: String
+    let title: String?
+    let items: [RecentTileItem]
+
+    func rows(columns: Int) -> [[RecentTileItem]] {
+        guard columns > 0 else { return items.isEmpty ? [] : [items] }
+        return stride(from: 0, to: items.count, by: columns).map {
+            Array(items[$0..<min($0 + columns, items.count)])
+        }
+    }
 }
 
 enum LauncherSearchResult: Identifiable {
@@ -28,36 +84,8 @@ enum LauncherSearchResult: Identifiable {
 final class LauncherModel: ObservableObject {
     static let defaultExpandedWindowHeight: CGFloat = 666
 
-    // 首页横向布局：插件与应用为固定宽度卡片，溢出后自动换行。
-    static let horizontalRecentItemWidth: CGFloat = 72
-    static let horizontalRecentItemHeight: CGFloat = 66
-    static let horizontalRecentItemSpacing: CGFloat = 8
-    static let horizontalRecentSectionSpacing: CGFloat = 12
-    /// 面板宽度 920 减去内容区左右 padding（16 × 2）。
-    static let horizontalRecentContentWidth: CGFloat = 888
-
-    static var horizontalRecentPerRow: Int {
-        max(1, Int((horizontalRecentContentWidth + horizontalRecentItemSpacing)
-            / (horizontalRecentItemWidth + horizontalRecentItemSpacing)))
-    }
-
-    static func horizontalRecentRows(count: Int) -> Int {
-        guard count > 0 else { return 1 }
-        return (count + horizontalRecentPerRow - 1) / horizontalRecentPerRow
-    }
-
-    static func horizontalRecentSectionHeight(rows: Int) -> CGFloat {
-        let titleAndGap: CGFloat = 22
-        return titleAndGap
-            + CGFloat(rows) * horizontalRecentItemHeight
-            + CGFloat(max(0, rows - 1)) * horizontalRecentItemSpacing
-    }
-
-    static func horizontalRecentPanelHeight(pluginCount: Int, applicationCount: Int) -> CGFloat {
-        let pluginHeight = horizontalRecentSectionHeight(rows: horizontalRecentRows(count: pluginCount))
-        let applicationHeight = horizontalRecentSectionHeight(rows: horizontalRecentRows(count: applicationCount))
-        return 24 + pluginHeight + horizontalRecentSectionSpacing + applicationHeight
-    }
+    /// 首屏横向布局下每个分区展示的最近条目上限。
+    static let horizontalRecentItemLimit = 15
 
     @Published var query = "" {
         didSet {
@@ -73,6 +101,10 @@ final class LauncherModel: ObservableObject {
     @Published var isShowingSettings = false
     @Published var selectedResult = 0
     @Published var isShowingActions = false
+    @Published var recentSelection = 0
+    /// 只有键盘导航后才高亮网格选中项，指针操作时保持与系统一致的干净外观。
+    @Published private(set) var isRecentSelectionActive = false
+    @Published var recentDisplayMode: RecentSearchDisplayMode = .vertical
     @Published private(set) var selectedText = ""
     @Published private(set) var focusRequest = 0
 
@@ -167,8 +199,99 @@ final class LauncherModel: ObservableObject {
     }
 
     func horizontalRecentItems(of kind: RecentUsageKind) -> [RecentUsageItem] {
-        Array(availableRecentItems.lazy.filter { $0.kind == kind }.prefix(15))
+        Array(
+            availableRecentItems.lazy
+                .filter { $0.kind == kind }
+                .prefix(Self.horizontalRecentItemLimit)
+        )
     }
+
+    // MARK: - 首页最近使用
+
+    var recentSections: [RecentTileSection] {
+        recentSections(displayMode: recentDisplayMode)
+    }
+
+    func recentSections(displayMode: RecentSearchDisplayMode) -> [RecentTileSection] {
+        switch displayMode {
+        case .vertical:
+            return [
+                RecentTileSection(
+                    id: "recent",
+                    title: nil,
+                    items: recentItems.map(tileItem(for:))
+                )
+            ]
+        case .horizontal:
+            return [
+                RecentTileSection(
+                    id: "recent.plugins",
+                    title: L10n.text("插件", "Plugins"),
+                    items: horizontalRecentItems(of: .plugin).map(tileItem(for:))
+                ),
+                RecentTileSection(
+                    id: "recent.applications",
+                    title: L10n.text("应用", "Applications"),
+                    items: horizontalRecentItems(of: .application).map(tileItem(for:))
+                )
+            ]
+        }
+    }
+
+    private func tileItem(for item: RecentUsageItem) -> RecentTileItem {
+        if let plugin = item.plugin { return .plugin(plugin) }
+        if let application = item.application { return .application(application) }
+        return .plugin(.clipboard)
+    }
+
+    var recentTileItems: [RecentTileItem] {
+        recentSections.flatMap(\.items)
+    }
+
+    var recentTileIndexMap: [String: Int] {
+        var map: [String: Int] = [:]
+        for (index, item) in recentTileItems.enumerated() {
+            map[item.id] = index
+        }
+        return map
+    }
+
+    var selectedRecentTileID: String? {
+        let items = recentTileItems
+        guard items.indices.contains(recentSelection) else { return nil }
+        return items[recentSelection].id
+    }
+
+    func moveRecentSelection(horizontal: Int, vertical: Int) {
+        let count = recentTileItems.count
+        guard count > 0 else {
+            recentSelection = 0
+            isRecentSelectionActive = false
+            return
+        }
+        let columns = LumaGridMetrics.columns
+        let current = min(max(0, recentSelection), count - 1)
+        let targetRow = min(max(0, current / columns + vertical), (count - 1) / columns)
+        let targetColumn = min(max(0, current % columns + horizontal), columns - 1)
+        recentSelection = min(targetRow * columns + targetColumn, count - 1)
+        isRecentSelectionActive = true
+    }
+
+    func activateRecentSelection() {
+        guard let id = selectedRecentTileID,
+              let item = recentTileItems.first(where: { $0.id == id }) else { return }
+        activate(item)
+    }
+
+    func activate(_ item: RecentTileItem) {
+        switch item.source {
+        case .plugin(let plugin):
+            openPlugin(plugin)
+        case .application(let application):
+            openApplication(application)
+        }
+    }
+
 
     var presentation: LauncherPresentation {
         if !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return .results }
@@ -191,22 +314,13 @@ final class LauncherModel: ObservableObject {
     }
 
     var preferredWindowHeight: CGFloat {
-        preferredWindowHeight(recentDisplayMode: .vertical)
+        preferredWindowHeight(recentDisplayMode: recentDisplayMode)
     }
 
     func preferredWindowHeight(recentDisplayMode: RecentSearchDisplayMode) -> CGFloat {
         switch presentation {
         case .search:
-            if recentItems.isEmpty { return 58 }
-            switch recentDisplayMode {
-            case .horizontal:
-                return Self.horizontalRecentPanelHeight(
-                    pluginCount: horizontalRecentItems(of: .plugin).count,
-                    applicationCount: horizontalRecentItems(of: .application).count
-                )
-            case .vertical:
-                return CGFloat(96 + recentItems.count * 52)
-            }
+            return Self.recentPanelHeight(sections: recentSections(displayMode: recentDisplayMode))
         case .results:
             return 430
         case .plugin, .settings:
@@ -214,10 +328,37 @@ final class LauncherModel: ObservableObject {
         }
     }
 
+    /// 首页高度：外壳 + 网格（含行间分隔线与分组标题）。
+    static func recentPanelHeight(sections: [RecentTileSection]) -> CGFloat {
+        var height = LumaChromeMetrics.headerHeight + LumaChromeMetrics.hairline
+            + LumaGridMetrics.gridTopPadding
+            + LumaGridMetrics.gridBottomPadding
+
+        let visibleSections = sections.filter { !$0.items.isEmpty }
+        guard !visibleSections.isEmpty else {
+            return height + LumaGridMetrics.emptyStateHeight
+        }
+
+        for (index, section) in visibleSections.enumerated() {
+            if index > 0 {
+                height += LumaChromeMetrics.hairline
+            }
+            if section.title != nil {
+                height += LumaGridMetrics.sectionHeaderHeight + 4
+            }
+            let rows = LumaGridMetrics.rows(count: section.items.count)
+            height += CGFloat(rows) * LumaGridMetrics.rowPitch
+                + CGFloat(rows - 1) * LumaChromeMetrics.hairline
+        }
+        return height
+    }
+
     func prepareForPresentation(query initialQuery: String = "") {
         selectedPlugin = nil
         isShowingSettings = false
         selectedResult = 0
+        recentSelection = 0
+        isRecentSelectionActive = false
         query = initialQuery
         selectedText = SelectedTextReader.read()
         if openOnlyMatchingPlugin() { return }
@@ -241,15 +382,34 @@ final class LauncherModel: ObservableObject {
     }
 
     func activateSelected() {
+        if presentation == .search {
+            activateRecentSelection()
+            return
+        }
         guard searchResults.indices.contains(selectedResult) else { return }
         activate(searchResults[selectedResult])
     }
 
     func moveSelection(_ delta: Int) {
+        if presentation == .search {
+            moveRecentSelection(horizontal: 0, vertical: delta)
+            return
+        }
         let count = searchResults.count
         guard count > 0 else { selectedResult = 0; return }
         selectedResult = (selectedResult + delta + count) % count
         isShowingActions = false
+    }
+
+    /// 左右方向键：首屏在网格中横向移动，搜索结果中展开操作栏。返回是否已消费该按键。
+    func moveSelectionHorizontally(_ delta: Int) -> Bool {
+        if presentation == .search {
+            moveRecentSelection(horizontal: delta, vertical: 0)
+            return true
+        }
+        guard delta > 0 else { return false }
+        toggleActions()
+        return true
     }
 
     func activate(_ result: LauncherSearchResult) {
@@ -315,6 +475,8 @@ final class LauncherModel: ObservableObject {
         selectedPlugin = nil
         isShowingSettings = false
         selectedResult = 0
+        recentSelection = 0
+        isRecentSelectionActive = false
         requestSearchFocus()
     }
 
