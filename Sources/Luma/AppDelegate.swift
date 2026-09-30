@@ -31,6 +31,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var keywordHotKeyIdentifiers: [UUID: UInt32] = [:]
     private var nextKeywordHotKeyIdentifier: UInt32 = 100
     private var windowPlacement = LauncherWindowPlacement()
+    private var panelSizing = LauncherPanelSizing()
+    private var panelMinimumHeight: CGFloat = 270
     private let launcherSession = LauncherSession()
     private var isUserResizingPanel = false
     private var isShowingPastePermissionAlert = false
@@ -111,34 +113,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             }
         )
 
-        let panel = LauncherPanel(
-            contentRect: NSRect(
-                x: 0,
-                y: 0,
-                width: 920,
-                height: model.preferredWindowHeight(
-                    recentDisplayMode: applicationSettings.recentSearchDisplayMode
-                )
-            ),
-            styleMask: [.titled, .fullSizeContentView, .resizable],
-            backing: .buffered,
-            defer: false
+        let panel = LauncherPanelFactory.make(
+            rootView: content,
+            height: model.preferredWindowHeight(
+                recentDisplayMode: applicationSettings.recentSearchDisplayMode
+            )
         )
-        panel.title = "Luma"
-        panel.titleVisibility = .hidden
-        panel.titlebarAppearsTransparent = true
-        panel.isMovableByWindowBackground = true
-        panel.isReleasedWhenClosed = false
-        panel.level = .floating
-        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient]
-        panel.backgroundColor = .clear
-        panel.isOpaque = false
-        panel.hasShadow = true
-        LauncherPanelAppearance.hideWindowControls(in: panel)
-        panel.minSize = NSSize(width: 920, height: 270)
-        panel.maxSize = NSSize(width: 920, height: 1_200)
         panel.delegate = self
-        panel.contentView = NSHostingView(rootView: content)
         self.panel = panel
     }
 
@@ -201,12 +182,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         guard let panel else { return }
         launcherSession.captureBeforePresentation(panel: panel)
         model.prepareForPresentation(query: initialQuery)
-        resizePanel(
-            to: model.preferredWindowHeight(
-                recentDisplayMode: applicationSettings.recentSearchDisplayMode
-            ),
-            animated: false
-        )
+        resizePanel(animated: false)
         NSApp.activate(ignoringOtherApps: true)
         panel.makeKeyAndOrderFront(nil)
     }
@@ -252,12 +228,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             .receive(on: RunLoop.main)
             .sink { [weak self] _, _, _ in
                 guard let self else { return }
-                self.resizePanel(
-                    to: self.model.preferredWindowHeight(
-                        recentDisplayMode: self.applicationSettings.recentSearchDisplayMode
-                    ),
-                    animated: self.panel?.isVisible == true
-                )
+                self.resizePanel(animated: self.panel?.isVisible == true)
             }
             .store(in: &cancellables)
 
@@ -267,30 +238,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             .sink { [weak self] mode in
                 guard let self else { return }
                 self.model.recentDisplayMode = mode
-                self.resizePanel(
-                    to: self.model.preferredWindowHeight(recentDisplayMode: mode),
-                    animated: self.panel?.isVisible == true
-                )
+                self.resizePanel(animated: self.panel?.isVisible == true)
             }
             .store(in: &cancellables)
     }
 
-    private func resizePanel(to height: CGFloat, animated: Bool) {
+    private func resizePanel(animated: Bool) {
         guard let panel,
               let screen = launcherSession.presentationScreen ?? panel.screen ?? NSScreen.main ?? NSScreen.screens.first
         else { return }
-        let width: CGFloat = 920
-        let minimumHeight = model.presentation == .search ? height : 280
-        panel.minSize = NSSize(width: width, height: minimumHeight)
-        panel.maxSize = NSSize(width: width, height: screen.visibleFrame.height)
-        let frame = windowPlacement.frame(
-            width: width,
-            height: height,
-            heightContext: model.windowHeightContext,
-            minimumHeight: minimumHeight,
-            visibleFrame: screen.visibleFrame
+        let width = LumaChromeMetrics.panelWidth
+        let target = windowPlacement.target(
+            for: model,
+            visibleFrame: screen.visibleFrame,
+            decorationHeight: LauncherPanelDecoration.height(of: panel)
         )
-        panel.setFrame(frame, display: true, animate: animated)
+        panelMinimumHeight = target.minimumHeight
+        panel.minSize = NSSize(width: width, height: target.minimumHeight)
+        panel.maxSize = NSSize(width: width, height: screen.visibleFrame.height)
+        guard panelSizing.shouldApply(target.frame) else { return }
+        panel.setFrame(target.frame, display: true, animate: animated)
+    }
+
+    /// 用户拖动缩放时兜住面板尺寸：宽度固定，高度不低于当前页面所需。
+    func windowWillResize(_ sender: NSWindow, to frameSize: NSSize) -> NSSize {
+        guard sender === panel else { return frameSize }
+        let maximumHeight = (
+            FocusedDisplayResolver.screen(containing: sender.frame)
+                ?? sender.screen
+                ?? NSScreen.main
+        )?.visibleFrame.height ?? frameSize.height
+        return NSSize(
+            width: LumaChromeMetrics.panelWidth,
+            height: min(max(frameSize.height, panelMinimumHeight), maximumHeight)
+        )
     }
 
     private func replaceHotKey(with shortcut: GlobalShortcut) -> Bool {
@@ -409,4 +390,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 final class LauncherPanel: NSPanel {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { true }
+}
+
+/// 创建启动器面板。面板尺寸完全由 `LauncherModel` 计算，所以这里关闭 SwiftUI
+/// 内容的尺寸传播：否则内容理想高度会被写成窗口最小高度，把模型高度顶高，
+/// 并在动画中反复弹跳（详见 `windowWillResize` 与 `LauncherPanelSizing`）。
+enum LauncherPanelFactory {
+    static func make<Content: View>(rootView: Content, height: CGFloat) -> LauncherPanel {
+        let panel = LauncherPanel(
+            contentRect: NSRect(
+                x: 0,
+                y: 0,
+                width: LumaChromeMetrics.panelWidth,
+                height: height
+            ),
+            styleMask: [.titled, .fullSizeContentView, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+        panel.title = "Luma"
+        panel.titleVisibility = .hidden
+        panel.titlebarAppearsTransparent = true
+        panel.isMovableByWindowBackground = true
+        panel.isReleasedWhenClosed = false
+        panel.level = .floating
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient]
+        panel.backgroundColor = .clear
+        panel.isOpaque = false
+        panel.hasShadow = true
+        LauncherPanelAppearance.hideWindowControls(in: panel)
+        panel.minSize = NSSize(width: LumaChromeMetrics.panelWidth, height: 270)
+        panel.maxSize = NSSize(width: LumaChromeMetrics.panelWidth, height: 1_200)
+        let hostingView = NSHostingView(rootView: rootView)
+        hostingView.sizingOptions = []
+        panel.contentView = hostingView
+        return panel
+    }
 }

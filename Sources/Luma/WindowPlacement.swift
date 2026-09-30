@@ -88,6 +88,59 @@ enum LauncherPanelAppearance {
     }
 }
 
+/// 面板尺寸请求去重：一次界面切换会连续产生多个等价请求（搜索词、选中插件与
+/// 设置开关各自发布一次），重复应用会让同一次动画被打断并来回弹跳。
+struct LauncherPanelSizing {
+    private var lastRequestedFrame: NSRect?
+
+    mutating func shouldApply(_ frame: NSRect) -> Bool {
+        guard frame != lastRequestedFrame else { return false }
+        lastRequestedFrame = frame
+        return true
+    }
+}
+
+/// 当前页面需要的面板目标尺寸；窗口与用户缩放都以此为准。
+struct LauncherPanelTarget {
+    /// 窗口 frame 尺寸（含标题栏等装饰）。
+    let frame: NSRect
+    /// 用户缩放时的最小 frame 高度。
+    let minimumHeight: CGFloat
+}
+
+extension LauncherWindowPlacement {
+    /// `LauncherModel` 的高度是内容可用高度（安全区），窗口 frame 还要算上标题栏装饰，
+    /// 否则 AppKit 会把 frame 顶高一个标题栏高度，动画末尾就会跳一下。
+    @MainActor
+    func target(
+        for model: LauncherModel,
+        visibleFrame: NSRect,
+        decorationHeight: CGFloat = 0
+    ) -> LauncherPanelTarget {
+        let contentHeight = model.preferredWindowHeight
+        let height = contentHeight + decorationHeight
+        let minimumHeight = (model.presentation == .search ? contentHeight : 280) + decorationHeight
+        return LauncherPanelTarget(
+            frame: frame(
+                width: LumaChromeMetrics.panelWidth,
+                height: height,
+                heightContext: model.windowHeightContext,
+                minimumHeight: minimumHeight,
+                visibleFrame: visibleFrame
+            ),
+            minimumHeight: minimumHeight
+        )
+    }
+}
+
+/// 窗口 frame 与内容安全区之间的高度差（标题栏）。测试环境或已隐藏标题栏时为 0。
+@MainActor
+enum LauncherPanelDecoration {
+    static func height(of panel: NSWindow) -> CGFloat {
+        max(0, panel.frame.height - panel.contentLayoutRect.height)
+    }
+}
+
 enum LauncherPanelDismissalPolicy {
     static func shouldDismissOnResignKey(
         isPresentingSheet: Bool,
