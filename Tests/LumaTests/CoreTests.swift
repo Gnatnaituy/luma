@@ -870,6 +870,25 @@ struct CoreTests {
             "recent search display mode persists"
         )
         try expect(
+            abs(applicationSettings.panelTransparency - 0.6) < 0.001,
+            "panel transparency defaults to the current look"
+        )
+        applicationSettings.setPanelTransparency(0.25)
+        try expect(
+            abs(applicationSettings.panelTransparency - 0.25) < 0.001
+                && abs(applicationSettings.panelTintAlpha - 0.75) < 0.001,
+            "panel background tint follows the selected transparency"
+        )
+        applicationSettings.setPanelTransparency(2)
+        try expect(applicationSettings.panelTransparency == 1, "panel transparency clamps to 100%")
+        applicationSettings.setPanelTransparency(-1)
+        try expect(applicationSettings.panelTransparency == 0, "panel transparency clamps to 0%")
+        applicationSettings.setPanelTransparency(0.25)
+        try expect(
+            abs(ApplicationSettings(defaults: applicationDefaults).panelTransparency - 0.25) < 0.001,
+            "panel transparency persists"
+        )
+        try expect(
             AppLanguage.allCases.map(\.title) == ["中文", "English"]
                 && AppLanguage.simplifiedChinese.locale.identifier == "zh-Hans"
                 && AppLanguage.english.locale.identifier == "en"

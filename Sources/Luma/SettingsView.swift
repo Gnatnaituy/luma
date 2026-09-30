@@ -360,6 +360,46 @@ struct SettingsView: View {
             Divider()
 
             HStack(spacing: 14) {
+                Image(systemName: "circle.lefthalf.filled")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(Color.primary)
+                    .frame(width: 34, height: 34)
+                    .background(LumaTone.controlFill, in: RoundedRectangle(cornerRadius: 8))
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(L10n.text("面板透明度", "Panel Transparency"))
+                        .font(.headline)
+                    Text(L10n.text(
+                        "拖动滑块调整面板背景的透明程度，选择时实时预览。",
+                        "Drag the slider to adjust the panel background transparency and preview it live."
+                    ))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+
+                VStack(alignment: .trailing, spacing: 6) {
+                    Text("\(panelTransparencyPercent)%")
+                        .font(.system(.subheadline, design: .monospaced).weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .frame(minWidth: 42, alignment: .trailing)
+                    Slider(
+                        value: Binding(
+                            get: { applicationSettings.panelTransparency },
+                            set: applicationSettings.setPanelTransparency
+                        ),
+                        in: 0...1,
+                        step: 0.01
+                    )
+                    .frame(width: 210)
+                    .accessibilityLabel(L10n.text("面板透明度", "Panel Transparency"))
+                }
+            }
+
+            Divider()
+
+            HStack(spacing: 14) {
                 Image(systemName: "externaldrive")
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(Color.primary)
@@ -402,6 +442,10 @@ struct SettingsView: View {
             }
         }
         .settingsCard()
+    }
+
+    private var panelTransparencyPercent: Int {
+        Int((applicationSettings.panelTransparency * 100).rounded())
     }
 
     private var appVersionDescription: String {

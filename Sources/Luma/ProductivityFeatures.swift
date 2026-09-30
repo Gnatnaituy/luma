@@ -102,7 +102,8 @@ struct LumaBackup: Codable {
 
 enum SettingsBackup {
     static let supportedKeys = [
-        "Luma.showsStatusBarIcon", "Luma.recentSearchDisplayMode", AppLanguage.storageKey,
+        "Luma.showsStatusBarIcon", "Luma.recentSearchDisplayMode", "Luma.panelTransparency",
+        AppLanguage.storageKey,
         "Luma.globalShortcut", "Luma.keywordShortcuts", "Luma.pluginConfigurations",
         "Luma.recentUsage.v1",
         "luma.stock.query-records.v1", "luma.stock.color-theme.v1", "luma.stock.data-source.v1",
@@ -130,7 +131,11 @@ enum SettingsBackup {
         for (key, value) in backup.values where supportedKeys.contains(key) {
             if value.hasPrefix("text:") { defaults.set(String(value.dropFirst(5)), forKey: key) }
             else if value.hasPrefix("bool:") { defaults.set(String(value.dropFirst(5)) == "true", forKey: key) }
-            else if value.hasPrefix("number:"), let number = Int(String(value.dropFirst(7))) { defaults.set(number, forKey: key) }
+            else if value.hasPrefix("number:") {
+                let text = String(value.dropFirst(7))
+                if let number = Int(text) { defaults.set(number, forKey: key) }
+                else if let number = Double(text) { defaults.set(number, forKey: key) }
+            }
             else if let data = Data(base64Encoded: value) { defaults.set(data, forKey: key) }
         }
     }

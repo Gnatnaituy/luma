@@ -23,7 +23,7 @@ struct LauncherView: View {
             content
         }
         .frame(minWidth: 820, maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .background(LumaPanelBackground())
+        .background(LumaPanelBackground(tintAlpha: applicationSettings.panelTintAlpha))
         .clipShape(RoundedRectangle(cornerRadius: LumaRadius.panel, style: .continuous))
         .onAppear(perform: installEscapeMonitor)
         .onDisappear(perform: removeEscapeMonitor)
