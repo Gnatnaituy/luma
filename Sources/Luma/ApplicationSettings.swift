@@ -28,6 +28,8 @@ final class ApplicationSettings: ObservableObject {
     @Published private(set) var recentSearchDisplayMode: RecentSearchDisplayMode
     @Published private(set) var language: AppLanguage
     @Published private(set) var launchesAtLogin: Bool
+    /// 面板背景透明度，0 为完全不透明、1 为完全透明。
+    @Published private(set) var panelTransparency: Double
     @Published private(set) var loginItemError = ""
 
     var applyHandler: ((Bool) -> Void)?
@@ -36,6 +38,7 @@ final class ApplicationSettings: ObservableObject {
     private let defaults: UserDefaults
     private let statusBarIconStorageKey = "Luma.showsStatusBarIcon"
     private let recentSearchDisplayModeStorageKey = "Luma.recentSearchDisplayMode"
+    private let panelTransparencyStorageKey = "Luma.panelTransparency"
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
@@ -51,7 +54,22 @@ final class ApplicationSettings: ObservableObject {
             .string(forKey: AppLanguage.storageKey)
             .flatMap(AppLanguage.init(rawValue:)) ?? .simplifiedChinese
         launchesAtLogin = LoginItemManager.isEnabled
+        if let stored = defaults.object(forKey: panelTransparencyStorageKey) as? NSNumber {
+            panelTransparency = min(1, max(0, stored.doubleValue))
+        } else {
+            panelTransparency = 1 - Double(LumaTone.panelTintAlpha)
+        }
         L10n.activate(language)
+    }
+
+    /// 面板背景的不透明度系数，1 为完全不透明、0 为完全透明背景，供玻璃背景直接使用。
+    var panelTintAlpha: CGFloat { CGFloat(1 - panelTransparency) }
+
+    func setPanelTransparency(_ value: Double) {
+        let clamped = min(1, max(0, value))
+        guard panelTransparency != clamped else { return }
+        panelTransparency = clamped
+        defaults.set(clamped, forKey: panelTransparencyStorageKey)
     }
 
     func setLaunchesAtLogin(_ enabled: Bool) {
