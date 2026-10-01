@@ -4,6 +4,8 @@ import SwiftUI
 struct LauncherSearchField: NSViewRepresentable {
     @Binding var text: String
     let focusRequest: Int
+    /// 大标题式的占位符：首页显示页面标题，其他页面显示搜索提示。
+    let placeholder: String
     let onSubmit: () -> Void
     let onMove: (Int) -> Void
     /// 左右方向键；返回是否消费按键，未消费时交还文本光标移动。
@@ -21,18 +23,34 @@ struct LauncherSearchField: NSViewRepresentable {
     }
 
     static func configure(_ field: NSSearchField, coordinator: Coordinator) {
-        field.placeholderString = L10n.text("搜索插件、输入算式…", "Search plugins or enter an expression…")
-        field.font = .systemFont(ofSize: 17, weight: .regular)
+        field.font = .systemFont(ofSize: LumaChromeMetrics.titleFontSize, weight: .medium)
         field.isBezeled = false
         field.drawsBackground = false
         field.focusRingType = .none
         field.delegate = coordinator
+        field.cell?.usesSingleLineMode = true
+        field.lineBreakMode = .byTruncatingTail
         (field.cell as? NSSearchFieldCell)?.searchButtonCell = nil
+    }
+
+    /// macOS 27 的标题兼作搜索框：占位符用更小更细的字号与三级文字色，
+    /// 既能当页面标题，又不会看起来像已输入的内容。
+    static func attributedPlaceholder(_ placeholder: String) -> NSAttributedString {
+        NSAttributedString(
+            string: placeholder,
+            attributes: [
+                .font: NSFont.systemFont(
+                    ofSize: LumaChromeMetrics.placeholderFontSize,
+                    weight: .regular
+                ),
+                .foregroundColor: NSColor.tertiaryLabelColor
+            ]
+        )
     }
 
     func updateNSView(_ field: NSSearchField, context: Context) {
         context.coordinator.parent = self
-        field.placeholderString = L10n.text("搜索插件、输入算式…", "Search plugins or enter an expression…")
+        field.placeholderAttributedString = Self.attributedPlaceholder(placeholder)
         if field.stringValue != text { field.stringValue = text }
         guard context.coordinator.lastFocusRequest != focusRequest else { return }
         context.coordinator.lastFocusRequest = focusRequest

@@ -1072,11 +1072,11 @@ struct CoreTests {
         }
         try expect(
             navigationModel.recentItems.count == 9
-                && LumaGridMetrics.columns == 7
-                && LumaGridMetrics.rows(count: 9) == 2
+                && LumaGridMetrics.columns == 9
+                && LumaGridMetrics.rows(count: 9) == 1
                 && navigationModel.preferredWindowHeight
                     == LauncherModel.recentPanelHeight(sections: navigationModel.recentSections),
-            "search page shows at most nine recent items as a two-row grid"
+            "search page shows at most nine recent items in a single row"
         )
         let flatHosting = NSHostingView(
             rootView: RecentItemsView(model: navigationModel)
@@ -1117,14 +1117,14 @@ struct CoreTests {
         let groupedSections = navigationModel.recentSections
         try expect(
             groupedSections.map(\.id) == ["recent.plugins", "recent.applications"]
-                && groupedSections.allSatisfy { $0.title != nil }
-                && LumaGridMetrics.rows(count: groupedSections[1].items.count) == 3,
-            "grouped layout splits plugins and applications into titled grid sections"
+                && groupedSections.allSatisfy { !$0.items.isEmpty }
+                && LumaGridMetrics.rows(count: groupedSections[1].items.count) == 2,
+            "grouped layout splits plugins and applications into separate grid sections"
         )
         try expect(
             navigationModel.preferredWindowHeight
                 == LauncherModel.recentPanelHeight(sections: groupedSections),
-            "grouped layout derives panel height from titled grid rows"
+            "grouped layout derives panel height from grid rows"
         )
         let groupedHosting = NSHostingView(
             rootView: RecentItemsView(model: navigationModel)
@@ -1150,17 +1150,17 @@ struct CoreTests {
         )
         navigationModel.moveSelection(1)
         try expect(
-            navigationModel.recentSelection == LumaGridMetrics.columns + 1,
-            "down arrow moves one grid row on the home grid"
+            navigationModel.recentSelection == 1,
+            "down arrow stays put when the flat grid has a single row"
         )
         navigationModel.moveSelection(1)
         try expect(
-            navigationModel.recentSelection == LumaGridMetrics.columns + 1,
-            "down arrow stops on the last home grid row"
+            navigationModel.recentSelection == 1,
+            "down arrow keeps the same tile on a single-row home grid"
         )
         navigationModel.moveSelectionHorizontally(-1)
         try expect(
-            navigationModel.recentSelection == LumaGridMetrics.columns,
+            navigationModel.recentSelection == 0,
             "left arrow moves back one grid column"
         )
         navigationModel.recentSelection = 0
@@ -1183,6 +1183,12 @@ struct CoreTests {
         )
         navigationModel.recentDisplayMode = .horizontal
         navigationModel.returnToSearch()
+        navigationModel.recentSelection = 0
+        navigationModel.moveSelection(1)
+        try expect(
+            navigationModel.recentSelection == LumaGridMetrics.columns,
+            "down arrow moves one grid row when the grouped grid has several rows"
+        )
         let safariIndex = navigationModel.recentTileItems.firstIndex { $0.title == "Safari" }
         try expect(
             safariIndex == Plugin.allCases.count,
@@ -1213,6 +1219,7 @@ struct CoreTests {
         let searchBridge = LauncherSearchField(
             text: Binding(get: { navigationModel.query }, set: { navigationModel.query = $0 }),
             focusRequest: 0,
+            placeholder: L10n.text("最近使用", "Recent"),
             onSubmit: navigationModel.activateSelected,
             onMove: navigationModel.moveSelection,
             onHorizontalMove: navigationModel.moveSelectionHorizontally,

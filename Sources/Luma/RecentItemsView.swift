@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// 首页：最近使用的插件与本机 App，以 macOS 27 风格的圆角方形图标网格呈现。
-/// 布局沿用「最近搜索展示」设置：平铺为一片网格，分组则按插件与应用分开。
+/// 首页：最近使用的插件与本机 App，以 macOS 27「应用程序」视图的圆角方形图标网格呈现。
+/// 布局沿用「最近搜索展示」设置：平铺为一片网格，分组则在插件与应用之间留一根分隔线。
 struct RecentItemsView: View {
     @ObservedObject var model: LauncherModel
 
@@ -22,9 +22,6 @@ struct RecentItemsView: View {
                     LumaHairline()
                         .padding(.horizontal, LumaGridMetrics.horizontalPadding)
                 }
-                if let title = section.title {
-                    sectionHeader(title)
-                }
                 rows(for: section, indexMap: indexMap)
             }
         }
@@ -33,24 +30,10 @@ struct RecentItemsView: View {
         .frame(maxWidth: .infinity)
     }
 
-    private func sectionHeader(_ title: String) -> some View {
-        Text(title)
-            .font(.system(size: 11, weight: .semibold))
-            .foregroundStyle(.secondary)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, LumaGridMetrics.horizontalPadding)
-            .frame(height: LumaGridMetrics.sectionHeaderHeight, alignment: .bottom)
-            .padding(.bottom, 4)
-    }
-
     private func rows(for section: RecentTileSection, indexMap: [String: Int]) -> some View {
         let rows = section.rows(columns: LumaGridMetrics.columns)
         return VStack(spacing: 0) {
-            ForEach(Array(rows.enumerated()), id: \.offset) { index, row in
-                if index > 0 {
-                    LumaHairline()
-                        .padding(.horizontal, LumaGridMetrics.horizontalPadding)
-                }
+            ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
                 HStack(spacing: LumaGridMetrics.columnSpacing) {
                     ForEach(row) { item in
                         tile(for: item, indexMap: indexMap)
@@ -104,10 +87,10 @@ private struct RecentItemTile: View {
                     size: LumaGridMetrics.iconSize
                 )
                 Text(item.title)
-                    .font(.system(size: 12))
+                    .font(.system(size: 13))
                     .foregroundStyle(.primary)
                     .lineLimit(1)
-                    .truncationMode(.middle)
+                    .truncationMode(.tail)
                     .frame(height: LumaGridMetrics.labelHeight)
             }
             .frame(width: LumaGridMetrics.tileWidth, height: LumaGridMetrics.tileHeight)

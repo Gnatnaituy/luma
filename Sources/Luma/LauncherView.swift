@@ -25,6 +25,8 @@ struct LauncherView: View {
         .frame(minWidth: 820, maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(LumaPanelBackground(tintAlpha: applicationSettings.panelTintAlpha))
         .clipShape(RoundedRectangle(cornerRadius: LumaRadius.panel, style: .continuous))
+        // 标题栏区域保持透明，内容直接贴顶（对齐 macOS 27「应用程序」视图）。
+        .ignoresSafeArea()
         .onAppear(perform: installEscapeMonitor)
         .onDisappear(perform: removeEscapeMonitor)
         .environment(\.locale, applicationSettings.language.locale)
@@ -54,6 +56,7 @@ struct LauncherView: View {
         LauncherHeader(
             query: $model.query,
             focusRequest: model.focusRequest,
+            placeholder: headerPlaceholder,
             showsBackButton: model.presentation == .plugin || model.presentation == .settings,
             isShowingSettings: model.isShowingSettings,
             onSubmit: model.activateSelected,
@@ -68,6 +71,13 @@ struct LauncherView: View {
                 else { model.showSettings() }
             }
         )
+    }
+
+    /// 首页把大标题当作页面标题，其他页面显示搜索提示（对齐 macOS 27「应用程序」视图）。
+    private var headerPlaceholder: String {
+        model.presentation == .search
+            ? L10n.text("最近使用", "Recent")
+            : L10n.text("搜索插件、输入算式…", "Search plugins or enter an expression…")
     }
 
     @ViewBuilder

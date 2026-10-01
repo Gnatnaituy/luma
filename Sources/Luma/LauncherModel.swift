@@ -50,10 +50,9 @@ struct RecentTileItem: Identifiable {
     }
 }
 
-/// 首页网格的一段；平铺布局只有一段且不带标题。
+/// 首页网格的一段；平铺布局只有一段，分组布局在插件与应用之间留一根分隔线。
 struct RecentTileSection: Identifiable {
     let id: String
-    let title: String?
     let items: [RecentTileItem]
 
     func rows(columns: Int) -> [[RecentTileItem]] {
@@ -86,6 +85,9 @@ final class LauncherModel: ObservableObject {
 
     /// 首屏横向布局下每个分区展示的最近条目上限。
     static let horizontalRecentItemLimit = 15
+
+    /// 首屏平铺与分类筛选下一次展示的最近条目上限。
+    static let recentItemLimit = 9
 
     @Published var query = "" {
         didSet {
@@ -195,7 +197,7 @@ final class LauncherModel: ObservableObject {
     }
 
     var recentItems: [RecentUsageItem] {
-        Array(availableRecentItems.prefix(9))
+        Array(availableRecentItems.prefix(Self.recentItemLimit))
     }
 
     func horizontalRecentItems(of kind: RecentUsageKind) -> [RecentUsageItem] {
@@ -218,7 +220,6 @@ final class LauncherModel: ObservableObject {
             return [
                 RecentTileSection(
                     id: "recent",
-                    title: nil,
                     items: recentItems.map(tileItem(for:))
                 )
             ]
@@ -226,12 +227,10 @@ final class LauncherModel: ObservableObject {
             return [
                 RecentTileSection(
                     id: "recent.plugins",
-                    title: L10n.text("插件", "Plugins"),
                     items: horizontalRecentItems(of: .plugin).map(tileItem(for:))
                 ),
                 RecentTileSection(
                     id: "recent.applications",
-                    title: L10n.text("应用", "Applications"),
                     items: horizontalRecentItems(of: .application).map(tileItem(for:))
                 )
             ]
@@ -328,7 +327,7 @@ final class LauncherModel: ObservableObject {
         }
     }
 
-    /// 首页高度：外壳 + 网格（含行间分隔线与分组标题）。
+    /// 首页高度：外壳 + 网格（仅分区之间保留一根分隔线）。
     static func recentPanelHeight(sections: [RecentTileSection]) -> CGFloat {
         var height = LumaChromeMetrics.headerHeight + LumaChromeMetrics.hairline
             + LumaGridMetrics.gridTopPadding
@@ -343,12 +342,8 @@ final class LauncherModel: ObservableObject {
             if index > 0 {
                 height += LumaChromeMetrics.hairline
             }
-            if section.title != nil {
-                height += LumaGridMetrics.sectionHeaderHeight + 4
-            }
             let rows = LumaGridMetrics.rows(count: section.items.count)
             height += CGFloat(rows) * LumaGridMetrics.rowPitch
-                + CGFloat(rows - 1) * LumaChromeMetrics.hairline
         }
         return height
     }
