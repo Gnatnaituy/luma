@@ -47,6 +47,8 @@ enum LumaGridMetrics {
     static let tileVerticalPadding: CGFloat = 7
     static let gridTopPadding: CGFloat = 7
     static let gridBottomPadding: CGFloat = 10
+    /// 分组模式下，发丝分隔线与下方应用区之间的留白。
+    static let applicationSectionSpacing: CGFloat = 12
 
     /// 系统 App 图标自带约 15% 透明留白，放大后其可见尺寸才与插件图标一致。
     static let applicationIconScale: CGFloat = 1.22
