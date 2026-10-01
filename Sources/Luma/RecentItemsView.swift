@@ -21,13 +21,42 @@ struct RecentItemsView: View {
                 if index > 0 {
                     LumaHairline()
                         .padding(.horizontal, LumaGridMetrics.horizontalPadding)
+                        .padding(.bottom, LumaGridMetrics.applicationSectionSpacing)
                 }
-                rows(for: section, indexMap: indexMap)
+                if section.scrollsHorizontally {
+                    scrollingRow(for: section, indexMap: indexMap)
+                } else {
+                    rows(for: section, indexMap: indexMap)
+                }
             }
         }
         .padding(.top, LumaGridMetrics.gridTopPadding)
         .padding(.bottom, LumaGridMetrics.gridBottomPadding)
         .frame(maxWidth: .infinity)
+    }
+
+    /// 单行横向滚动区（分组模式下的插件区）：不换行，键盘选择时自动滚到可见处。
+    private func scrollingRow(for section: RecentTileSection, indexMap: [String: Int]) -> some View {
+        ScrollViewReader { proxy in
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: LumaGridMetrics.columnSpacing) {
+                    ForEach(section.items) { item in
+                        tile(for: item, indexMap: indexMap)
+                            .id(item.id)
+                    }
+                }
+                .padding(.horizontal, LumaGridMetrics.horizontalPadding)
+                .padding(.vertical, LumaGridMetrics.tileVerticalPadding)
+            }
+            .onChange(of: model.recentSelection) { _, _ in
+                guard model.isRecentSelectionActive,
+                      let selected = model.selectedRecentTileID,
+                      section.items.contains(where: { $0.id == selected }) else { return }
+                withAnimation(LumaMotion.quick) {
+                    proxy.scrollTo(selected, anchor: .center)
+                }
+            }
+        }
     }
 
     private func rows(for section: RecentTileSection, indexMap: [String: Int]) -> some View {

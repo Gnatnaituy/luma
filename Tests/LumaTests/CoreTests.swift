@@ -1122,9 +1122,20 @@ struct CoreTests {
             "grouped layout splits plugins and applications into separate grid sections"
         )
         try expect(
-            navigationModel.preferredWindowHeight
-                == LauncherModel.recentPanelHeight(sections: groupedSections),
-            "grouped layout derives panel height from grid rows"
+            groupedSections[0].scrollsHorizontally && !groupedSections[1].scrollsHorizontally,
+            "grouped plugins stay on one scrolling row while applications wrap"
+        )
+        let groupedExpectedHeight = LumaChromeMetrics.headerHeight + LumaChromeMetrics.hairline
+            + LumaGridMetrics.gridTopPadding
+            + LumaGridMetrics.gridBottomPadding
+            + LumaGridMetrics.rowPitch
+            + LumaChromeMetrics.hairline
+            + LumaGridMetrics.applicationSectionSpacing
+            + 2 * LumaGridMetrics.rowPitch
+        try expect(
+            LauncherModel.recentPanelHeight(sections: groupedSections) == groupedExpectedHeight
+                && navigationModel.preferredWindowHeight == groupedExpectedHeight,
+            "grouped layout counts the scrolling plugin row as a single row"
         )
         let groupedHosting = NSHostingView(
             rootView: RecentItemsView(model: navigationModel)
@@ -1135,8 +1146,8 @@ struct CoreTests {
         )
         groupedHosting.layoutSubtreeIfNeeded()
         try expect(
-            !containsScrollView(in: groupedHosting),
-            "grouped recent usage wraps into grid rows instead of scrolling"
+            containsScrollView(in: groupedHosting),
+            "grouped plugins scroll horizontally instead of wrapping onto more rows"
         )
         navigationModel.recentDisplayMode = .vertical
         try expect(
@@ -1184,10 +1195,16 @@ struct CoreTests {
         navigationModel.recentDisplayMode = .horizontal
         navigationModel.returnToSearch()
         navigationModel.recentSelection = 0
+        navigationModel.moveSelectionHorizontally(1)
+        try expect(
+            navigationModel.recentSelection == 1,
+            "right arrow walks along the single scrolling plugin row"
+        )
+        navigationModel.recentSelection = 0
         navigationModel.moveSelection(1)
         try expect(
-            navigationModel.recentSelection == LumaGridMetrics.columns,
-            "down arrow moves one grid row when the grouped grid has several rows"
+            navigationModel.recentSelection == Plugin.allCases.count,
+            "down arrow leaves the single plugin row for the first application row"
         )
         let safariIndex = navigationModel.recentTileItems.firstIndex { $0.title == "Safari" }
         try expect(
@@ -1219,11 +1236,11 @@ struct CoreTests {
         let searchBridge = LauncherSearchField(
             text: Binding(get: { navigationModel.query }, set: { navigationModel.query = $0 }),
             focusRequest: 0,
-            placeholder: L10n.text("最近使用", "Recent"),
             onSubmit: navigationModel.activateSelected,
             onMove: navigationModel.moveSelection,
             onHorizontalMove: navigationModel.moveSelectionHorizontally,
-            onEscape: { _ = navigationModel.handleEscape() }
+            onEscape: { _ = navigationModel.handleEscape() },
+            onComposingChange: { _ in }
         )
         let searchCoordinator = searchBridge.makeCoordinator()
         let nativeSearchField = NSSearchField()

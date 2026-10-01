@@ -54,6 +54,8 @@ struct RecentTileItem: Identifiable {
 struct RecentTileSection: Identifiable {
     let id: String
     let items: [RecentTileItem]
+    /// 单行横向滚动，不换行（分组模式下的插件区）。
+    var scrollsHorizontally: Bool = false
 
     func rows(columns: Int) -> [[RecentTileItem]] {
         guard columns > 0 else { return items.isEmpty ? [] : [items] }
@@ -227,7 +229,8 @@ final class LauncherModel: ObservableObject {
             return [
                 RecentTileSection(
                     id: "recent.plugins",
-                    items: horizontalRecentItems(of: .plugin).map(tileItem(for:))
+                    items: horizontalRecentItems(of: .plugin).map(tileItem(for:)),
+                    scrollsHorizontally: true
                 ),
                 RecentTileSection(
                     id: "recent.applications",
@@ -261,18 +264,78 @@ final class LauncherModel: ObservableObject {
         return items[recentSelection].id
     }
 
+    /// 每个分区在网格里的形状：单行滚动区只有一行，其余按 `columns` 换行。
+    private struct RecentSectionShape {
+        let itemCount: Int
+        let columnsPerRow: Int
+
+        var rowCount: Int {
+            guard itemCount > 0, columnsPerRow > 0 else { return 0 }
+            return (itemCount + columnsPerRow - 1) / columnsPerRow
+        }
+    }
+
+    private var recentSectionShapes: [RecentSectionShape] {
+        recentSections.map { section in
+            RecentSectionShape(
+                itemCount: section.items.count,
+                columnsPerRow: section.scrollsHorizontally
+                    ? max(1, section.items.count)
+                    : LumaGridMetrics.columns
+            )
+        }
+    }
+
     func moveRecentSelection(horizontal: Int, vertical: Int) {
-        let count = recentTileItems.count
-        guard count > 0 else {
+        let shapes = recentSectionShapes
+        let total = shapes.reduce(0) { $0 + $1.itemCount }
+        guard total > 0 else {
             recentSelection = 0
             isRecentSelectionActive = false
             return
         }
-        let columns = LumaGridMetrics.columns
-        let current = min(max(0, recentSelection), count - 1)
-        let targetRow = min(max(0, current / columns + vertical), (count - 1) / columns)
-        let targetColumn = min(max(0, current % columns + horizontal), columns - 1)
-        recentSelection = min(targetRow * columns + targetColumn, count - 1)
+
+        let current = min(max(0, recentSelection), total - 1)
+        var sectionIndex = 0
+        var sectionStart = 0
+        for (index, shape) in shapes.enumerated() {
+            if current < sectionStart + shape.itemCount { sectionIndex = index; break }
+            sectionStart += shape.itemCount
+        }
+        let shape = shapes[sectionIndex]
+        let columns = max(1, shape.columnsPerRow)
+        let local = current - sectionStart
+        var row = local / columns
+        var column = local % columns
+
+        if vertical != 0 {
+            let targetRow = row + vertical
+            if targetRow < 0 || targetRow >= shape.rowCount {
+                // 纵向越出本区：落到相邻分区，尽量保持列号。
+                let neighbour = targetRow < 0 ? sectionIndex - 1 : sectionIndex + 1
+                if shapes.indices.contains(neighbour), shapes[neighbour].itemCount > 0 {
+                    let neighbourShape = shapes[neighbour]
+                    let neighbourColumns = max(1, neighbourShape.columnsPerRow)
+                    let neighbourRow = targetRow < 0 ? neighbourShape.rowCount - 1 : 0
+                    let neighbourLocal = min(
+                        neighbourRow * neighbourColumns + min(column, neighbourColumns - 1),
+                        neighbourShape.itemCount - 1
+                    )
+                    recentSelection = shapes[0..<neighbour].reduce(0) { $0 + $1.itemCount } + neighbourLocal
+                    isRecentSelectionActive = true
+                    return
+                }
+                row = min(max(0, targetRow), shape.rowCount - 1)
+            } else {
+                row = targetRow
+            }
+        }
+
+        if horizontal != 0 {
+            column = min(max(0, column + horizontal), columns - 1)
+        }
+
+        recentSelection = min(sectionStart + row * columns + column, sectionStart + shape.itemCount - 1)
         isRecentSelectionActive = true
     }
 
@@ -340,9 +403,10 @@ final class LauncherModel: ObservableObject {
 
         for (index, section) in visibleSections.enumerated() {
             if index > 0 {
-                height += LumaChromeMetrics.hairline
+                height += LumaChromeMetrics.hairline + LumaGridMetrics.applicationSectionSpacing
             }
-            let rows = LumaGridMetrics.rows(count: section.items.count)
+            // 单行滚动区永远只占一行，不随条目数增高。
+            let rows = section.scrollsHorizontally ? 1 : LumaGridMetrics.rows(count: section.items.count)
             height += CGFloat(rows) * LumaGridMetrics.rowPitch
         }
         return height
