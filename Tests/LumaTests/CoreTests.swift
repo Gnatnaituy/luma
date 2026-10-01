@@ -1660,10 +1660,97 @@ struct CoreTests {
 
     }
 
+    /// 历史里的图片已经以压缩文件存在时必须直接复用，否则每次剪贴板变化都会把所有
+    /// 图片重新「解码 → TIFF → PNG」一遍，瞬时占用大量内存（实测启动后 267 MB 常驻）。
+    @Test
+    @MainActor
+    func resavingStoredImagesReusesTheirFilesWithoutReencoding() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("LumaClipboardReencode-" + UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let storage = ClipboardStorage(directory: directory)
+        let imagesDirectory = directory.appendingPathComponent("images", isDirectory: true)
+        try FileManager.default.createDirectory(at: imagesDirectory, withIntermediateDirectories: true)
+
+        // 一个已经落盘、文件名并非内容哈希的图片文件：重新编码会得到哈希名，
+        // 直接复用则保留原名，据此可以判断是否跳过了编码。
+        let existingFile = imagesDirectory.appendingPathComponent("already-stored.image")
+        let pngData = Data(base64Encoded: """
+            iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==
+            """)!
+        try pngData.write(to: existingFile)
+
+        let entry = ClipboardEntry(payload: .image(ClipboardImage(fileURL: existingFile)))
+        storage.save([entry])
+
+        guard let record = storage.load().first,
+              case .image(let image) = record.payload else {
+            throw TestFailure("stored image entry")
+        }
+        try expect(
+            image.fileURL?.lastPathComponent == "already-stored.image",
+            "an already stored image is reused instead of being decoded and re-encoded"
+        )
+    }
+
     private func expect(_ condition: @autoclosure () throws -> Bool, _ name: String) throws {
         guard try condition() else { throw TestFailure(name) }
     }
 
+    /// 剪贴板图片落盘后必须释放内存里的原图，否则一次会话里复制过的每张图都会一直
+    /// 驻留（实测峰值 1 GB，而磁盘上的压缩结果只有十几 MB）。
+    @Test
+    @MainActor
+    func clipboardImagesReleaseInlineDataOncePersisted() async throws {
+        let suiteName = "app.luma.clipboard-image-memory-tests." + UUID().uuidString
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defaults.removePersistentDomain(forName: suiteName)
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("LumaClipboardImageMemory-" + UUID().uuidString, isDirectory: true)
+        defer {
+            try? FileManager.default.removeItem(at: directory)
+            defaults.removePersistentDomain(forName: suiteName)
+        }
+
+        let monitor = ClipboardMonitor(
+            entries: [],
+            storage: ClipboardStorage(directory: directory),
+            settings: defaults
+        )
+        // 1x1 PNG：可被 NSImage 解析并重新编码。
+        let imageData = Data(base64Encoded: """
+            iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==
+            """)!
+        monitor.ingest(.image(ClipboardImage(data: imageData)))
+
+        guard case .image(let inlineImage) = monitor.entries.first?.payload else {
+            throw TestFailure("clipboard image entry")
+        }
+        try expect(inlineImage.inlineData != nil, "a freshly captured image starts as inline data")
+
+        // 持久化是 150 ms 防抖 + 后台队列，这里让出主线程等它完成。
+        for _ in 0..<250 {
+            if case .image(let image) = monitor.entries.first?.payload, image.inlineData == nil { break }
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+
+        guard case .image(let persistedImage) = monitor.entries.first?.payload else {
+            throw TestFailure("clipboard image entry after persistence")
+        }
+        try expect(persistedImage.inlineData == nil, "persisted image releases its inline data")
+        guard let fileURL = persistedImage.fileURL else {
+            throw TestFailure("persisted image is backed by a file")
+        }
+        try expect(
+            FileManager.default.fileExists(atPath: fileURL.path),
+            "the file backing a persisted image exists"
+        )
+        try expect(
+            persistedImage.makeImage() != nil,
+            "a file-backed clipboard image still renders"
+        )
+    }
     private func topVisualInset<V: View>(_ view: V) throws -> Int {
         let width = 715
         let height = 423

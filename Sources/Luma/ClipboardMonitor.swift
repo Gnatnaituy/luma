@@ -312,11 +312,38 @@ final class ClipboardMonitor: ObservableObject {
             return
         }
         let snapshot = entries
+        var persistedImages: [UUID: URL] = [:]
         persistenceQueue.sync {
             queuedPersistenceSnapshot = nil
             isPersistenceScheduled = false
-            storage.save(snapshot)
+            persistedImages = storage.save(snapshot)
         }
+        releasePersistedImageData(persistedImages)
+    }
+
+    /// 把已经落盘的图片从「内存原图」换成「文件引用」。
+    ///
+    /// 只按 entry id 匹配，并且要求该条目此刻仍是内联图片，因此期间新增、删除或
+    /// 收藏都不会被这次替换影响。
+    private func releasePersistedImageData(_ persistedImages: [UUID: URL]) {
+        guard !persistedImages.isEmpty else { return }
+        var updated = entries
+        var didChange = false
+        for index in updated.indices {
+            guard case .image(let image) = updated[index].payload,
+                  image.inlineData != nil,
+                  let fileURL = persistedImages[updated[index].id] else { continue }
+            let entry = updated[index]
+            updated[index] = ClipboardEntry(
+                id: entry.id,
+                payload: .image(ClipboardImage(fileURL: fileURL)),
+                copiedAt: entry.copiedAt,
+                isFavorite: entry.isFavorite
+            )
+            didChange = true
+        }
+        guard didChange else { return }
+        entries = updated
     }
 
     private func write(_ payload: ClipboardPayload) {
@@ -347,6 +374,11 @@ final class ClipboardMonitor: ObservableObject {
         guard force || pasteboard.changeCount != lastChangeCount else { return }
         lastChangeCount = pasteboard.changeCount
         guard let payload = Self.readPayload(from: pasteboard) else { return }
+        ingest(payload)
+    }
+
+    /// 记录一份新的剪贴板内容。`captureIfNeeded` 的落点，测试也用它绕过真实剪贴板。
+    func ingest(_ payload: ClipboardPayload) {
         let updatedEntries = ClipboardHistory.inserting(payload, into: entries)
         guard updatedEntries != entries else { return }
         entries = updatedEntries
@@ -397,7 +429,11 @@ final class ClipboardMonitor: ObservableObject {
                 self.isPersistenceScheduled = false
                 guard let latest = self.queuedPersistenceSnapshot else { return }
                 self.queuedPersistenceSnapshot = nil
-                storage.save(latest)
+                let persistedImages = storage.save(latest)
+                guard !persistedImages.isEmpty else { return }
+                DispatchQueue.main.async { [weak self] in
+                    self?.releasePersistedImageData(persistedImages)
+                }
             }
         }
     }
