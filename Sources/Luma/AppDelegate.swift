@@ -261,7 +261,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         panel.minSize = NSSize(width: width, height: target.minimumHeight)
         panel.maxSize = NSSize(width: width, height: screen.visibleFrame.height)
         guard panelSizing.shouldApply(target.frame) else { return }
-        panel.setFrame(target.frame, display: true, animate: animated)
+        applyPanelFrame(panel, frame: target.frame, animated: animated)
+    }
+
+    /// 应用面板尺寸。
+    ///
+    /// 不能用 `NSWindow.setFrame(_:display:animate:)` 的动画分支：它是同步的，会一直
+    /// 阻塞主线程直到动画播完。在 Liquid Glass 面板上单次实测约 218 ms，而每次切换页面、
+    /// 首次输入或清空搜索都会触发一次，用户感知就是「操作有点卡」。走 `animator()` 代理
+    /// 交给 Core Animation 后，同样有 0.2 s 的平滑高度过渡（实测有 11 个中间帧），
+    /// 但主线程不再被占用，动画期间输入照常响应。
+    private func applyPanelFrame(_ panel: LauncherPanel, frame: NSRect, animated: Bool) {
+        guard animated else {
+            panel.setFrame(frame, display: true, animate: false)
+            return
+        }
+        NSAnimationContext.beginGrouping()
+        NSAnimationContext.current.duration = 0.2
+        panel.animator().setFrame(frame, display: true)
+        NSAnimationContext.endGrouping()
     }
 
     /// 用户拖动缩放时兜住面板尺寸：宽度固定，高度不低于当前页面所需。
