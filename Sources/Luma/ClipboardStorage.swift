@@ -177,12 +177,24 @@ final class ClipboardStorage {
             .sorted { $0.copiedAt > $1.copiedAt }
     }
 
-    func save(_ entries: [ClipboardEntry]) {
+    /// 写入历史记录。
+    ///
+    /// 返回值是本次落盘的图片条目（entry id → 图片文件）。调用方据此把内存里的原图
+    /// 换成文件引用：剪贴板图片以 Data 形式进入内存，若不释放，一次会话里复制过的
+    /// 每张图都会一直驻留，实测峰值可到 1 GB，而磁盘上的压缩结果只有十几 MB。
+    @discardableResult
+    func save(_ entries: [ClipboardEntry]) -> [UUID: URL] {
         do {
             try prepareDirectories()
+            var persistedImages: [UUID: URL] = [:]
             let records = try entries.map { entry in
                 try autoreleasepool {
-                    try makeRecord(entry)
+                    let record = try makeRecord(entry)
+                    if let fileName = record.imageFileName {
+                        persistedImages[entry.id] = imagesDirectory
+                            .appendingPathComponent(fileName, isDirectory: false)
+                    }
+                    return record
                 }
             }
             let encoder = JSONEncoder()
@@ -191,8 +203,10 @@ final class ClipboardStorage {
             try encoder.encode(records).write(to: indexURL, options: .atomic)
             try? fileManager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: indexURL.path)
             removeOrphanedImages(keeping: Set(records.compactMap(\.imageFileName)))
+            return persistedImages
         } catch {
             NSLog("Luma clipboard persistence failed: %@", error.localizedDescription)
+            return [:]
         }
     }
 
@@ -219,6 +233,12 @@ final class ClipboardStorage {
         case .files(let urls):
             return StoredEntry(entry: entry, kind: .file, urls: urls.map(\.absoluteString))
         case .image(let image):
+            // 已经在 images 目录里的图片直接复用文件：它本来就是这里写出的压缩结果。
+            // 重新走一遍「解码 → TIFF → PNG」不仅慢，还会为每张图瞬时占用
+            // 宽 × 高 × 4 字节（一次 save 会把全部历史图片都过一遍）。
+            if let storedFile = storedFile(for: image) {
+                return StoredEntry(entry: entry, kind: .image, imageFileName: storedFile.lastPathComponent)
+            }
             guard let data = image.dataForPersistence() else { throw StorageError.missingImageData }
             let fileName = ClipboardImage.sha256(data) + ".image"
             let destination = imagesDirectory.appendingPathComponent(fileName, isDirectory: false)
@@ -228,6 +248,14 @@ final class ClipboardStorage {
             }
             return StoredEntry(entry: entry, kind: .image, imageFileName: fileName)
         }
+    }
+
+    /// 图片若已作为文件存在于本目录，返回该文件，避免再次解码与编码。
+    private func storedFile(for image: ClipboardImage) -> URL? {
+        guard let fileURL = image.fileURL,
+              fileURL.deletingLastPathComponent().standardizedFileURL == imagesDirectory.standardizedFileURL,
+              fileManager.fileExists(atPath: fileURL.path) else { return nil }
+        return fileURL
     }
 
     private func makeEntry(_ record: StoredEntry) -> ClipboardEntry? {
