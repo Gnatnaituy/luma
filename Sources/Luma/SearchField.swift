@@ -4,13 +4,13 @@ import SwiftUI
 struct LauncherSearchField: NSViewRepresentable {
     @Binding var text: String
     let focusRequest: Int
-    /// 大标题式的占位符：首页显示页面标题，其他页面显示搜索提示。
-    let placeholder: String
     let onSubmit: () -> Void
     let onMove: (Int) -> Void
     /// 左右方向键；返回是否消费按键，未消费时交还文本光标移动。
     let onHorizontalMove: (Int) -> Bool
     let onEscape: () -> Void
+    /// 输入法正在组合（有标记文本）时为 true，此时占位符必须让位。
+    let onComposingChange: (Bool) -> Void
 
     func makeCoordinator() -> Coordinator {
         Coordinator(parent: self)
@@ -30,27 +30,22 @@ struct LauncherSearchField: NSViewRepresentable {
         field.delegate = coordinator
         field.cell?.usesSingleLineMode = true
         field.lineBreakMode = .byTruncatingTail
-        (field.cell as? NSSearchFieldCell)?.searchButtonCell = nil
-    }
-
-    /// macOS 27 的标题兼作搜索框：占位符用更小更细的字号与三级文字色，
-    /// 既能当页面标题，又不会看起来像已输入的内容。
-    static func attributedPlaceholder(_ placeholder: String) -> NSAttributedString {
-        NSAttributedString(
-            string: placeholder,
+        // NSSearchFieldCell 自带一个本地化的默认占位符（中文即「搜索」，且用输入框
+        // 自己的 26pt 字体绘制）。占位符由 LauncherHeader 自己画，这里必须压掉它；
+        // 置空字符串会被当成 nil 而回退到默认值，所以用一个透明的空格占位。
+        // 字号要跟输入框一致：输入框的固有高度由占位符字号决定，写小了会把输入的文字裁掉。
+        field.placeholderAttributedString = NSAttributedString(
+            string: " ",
             attributes: [
-                .font: NSFont.systemFont(
-                    ofSize: LumaChromeMetrics.placeholderFontSize,
-                    weight: .regular
-                ),
-                .foregroundColor: NSColor.tertiaryLabelColor
+                .font: NSFont.systemFont(ofSize: LumaChromeMetrics.titleFontSize, weight: .medium),
+                .foregroundColor: NSColor.clear
             ]
         )
+        (field.cell as? NSSearchFieldCell)?.searchButtonCell = nil
     }
 
     func updateNSView(_ field: NSSearchField, context: Context) {
         context.coordinator.parent = self
-        field.placeholderAttributedString = Self.attributedPlaceholder(placeholder)
         if field.stringValue != text { field.stringValue = text }
         guard context.coordinator.lastFocusRequest != focusRequest else { return }
         context.coordinator.lastFocusRequest = focusRequest
@@ -71,6 +66,9 @@ struct LauncherSearchField: NSViewRepresentable {
         func controlTextDidChange(_ notification: Notification) {
             guard let field = notification.object as? NSSearchField else { return }
             parent.text = field.stringValue
+            parent.onComposingChange(
+                (field.currentEditor() as? NSTextView)?.hasMarkedText() ?? false
+            )
         }
 
         func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
