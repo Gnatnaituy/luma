@@ -25,25 +25,31 @@ enum LumaTone {
 
 enum LumaChromeMetrics {
     static let panelWidth: CGFloat = 920
-    static let headerHeight: CGFloat = 56
-    static let searchFieldHeight: CGFloat = 36
-    static let searchFieldRadius: CGFloat = 11
+    /// 对齐 macOS 27「应用程序」视图：顶部是兼作搜索框的大标题。
+    static let headerHeight: CGFloat = 68
+    static let searchFieldHeight: CGFloat = 40
     static let iconButtonSize: CGFloat = 30
     static let hairline: CGFloat = 1
+    static let titleFontSize: CGFloat = 26
+    /// 首页大标题占位符：比输入文字更轻更小，避免压过网格内容。
+    static let placeholderFontSize: CGFloat = 22
+    static let appIconSize: CGFloat = 32
 }
 
 /// App 资料库网格的度量，视图与窗口高度计算共用同一组常量。
 enum LumaGridMetrics {
     static let horizontalPadding: CGFloat = 24
-    static let tileWidth: CGFloat = 108
-    static let columnSpacing: CGFloat = 14
-    static let iconSize: CGFloat = 56
+    static let tileWidth: CGFloat = 92
+    static let columnSpacing: CGFloat = 5
+    static let iconSize: CGFloat = 68
     static let iconLabelSpacing: CGFloat = 8
-    static let labelHeight: CGFloat = 15
-    static let tileVerticalPadding: CGFloat = 10
-    static let gridTopPadding: CGFloat = 12
-    static let gridBottomPadding: CGFloat = 18
-    static let sectionHeaderHeight: CGFloat = 24
+    static let labelHeight: CGFloat = 16
+    static let tileVerticalPadding: CGFloat = 7
+    static let gridTopPadding: CGFloat = 7
+    static let gridBottomPadding: CGFloat = 10
+
+    /// 系统 App 图标自带约 15% 透明留白，放大后其可见尺寸才与插件图标一致。
+    static let applicationIconScale: CGFloat = 1.22
 
     static var columns: Int {
         let available = LumaChromeMetrics.panelWidth - horizontalPadding * 2
@@ -253,6 +259,8 @@ struct LumaIconTile: View {
                     .antialiased(true)
                     .scaledToFit()
                     .frame(width: size, height: size)
+                    // 系统图标画布留白较多，放大后与插件图标的可见尺寸对齐。
+                    .scaleEffect(LumaGridMetrics.applicationIconScale)
             } else {
                 symbolTile
             }

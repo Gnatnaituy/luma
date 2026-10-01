@@ -1,11 +1,12 @@
 import AppKit
 import SwiftUI
 
-/// 面板顶部工具栏：应用图标（或返回按钮）、搜索框与设置按钮。
-/// 版式对齐 macOS 27 应用窗口的工具栏与发丝分隔线。
+/// 面板顶部工具栏，对齐 macOS 27「应用程序」视图：左侧图标 + 兼作搜索框的大标题，
+/// 右侧省略号按钮。版式与发丝分隔线同样沿用该视图。
 struct LauncherHeader: View {
     @Binding var query: String
     let focusRequest: Int
+    let placeholder: String
     let showsBackButton: Bool
     let isShowingSettings: Bool
     let onSubmit: () -> Void
@@ -32,15 +33,18 @@ struct LauncherHeader: View {
                     .resizable()
                     .interpolation(.high)
                     .scaledToFit()
-                    .frame(width: 28, height: 28)
+                    .frame(
+                        width: LumaChromeMetrics.appIconSize,
+                        height: LumaChromeMetrics.appIconSize
+                    )
                     .accessibilityLabel("Luma")
             }
 
             searchField
 
             Button(action: onToggleSettings) {
-                Image(systemName: "gearshape.fill")
-                    .font(.system(size: 13, weight: .semibold))
+                Image(systemName: "ellipsis")
+                    .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(isShowingSettings ? Color.accentColor : Color.secondary)
             }
             .buttonStyle(LumaIconButtonStyle(
@@ -54,28 +58,16 @@ struct LauncherHeader: View {
     }
 
     private var searchField: some View {
-        HStack(spacing: 9) {
-            Image(systemName: "magnifyingglass")
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(.secondary)
-
-            LauncherSearchField(
-                text: $query,
-                focusRequest: focusRequest,
-                onSubmit: onSubmit,
-                onMove: onMove,
-                onHorizontalMove: onHorizontalMove,
-                onEscape: onEscape
-            )
-        }
-        .padding(.horizontal, 12)
-        .frame(height: LumaChromeMetrics.searchFieldHeight)
-        .background(
-            LumaTone.controlFill,
-            in: RoundedRectangle(cornerRadius: LumaChromeMetrics.searchFieldRadius, style: .continuous)
+        LauncherSearchField(
+            text: $query,
+            focusRequest: focusRequest,
+            placeholder: placeholder,
+            onSubmit: onSubmit,
+            onMove: onMove,
+            onHorizontalMove: onHorizontalMove,
+            onEscape: onEscape
         )
-        .overlay {
-            LumaRimStroke(cornerRadius: LumaChromeMetrics.searchFieldRadius)
-        }
+        .frame(maxWidth: .infinity)
+        .frame(height: LumaChromeMetrics.searchFieldHeight)
     }
 }

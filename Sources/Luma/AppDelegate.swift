@@ -223,10 +223,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     private func observePresentation() {
+        // 界面切换与首页数据（最近使用、已安装 App）都会改变目标高度；尺寸请求本身
+        // 按目标 frame 去重，因此多路来源不会造成重复动画。
         Publishers.CombineLatest3(model.$query, model.$selectedPlugin, model.$isShowingSettings)
+            .map { _ in () }
+            .merge(with: model.objectWillChange.map { _ in () })
             .dropFirst()
             .receive(on: RunLoop.main)
-            .sink { [weak self] _, _, _ in
+            .sink { [weak self] in
                 guard let self else { return }
                 self.resizePanel(animated: self.panel?.isVisible == true)
             }
@@ -424,6 +428,8 @@ enum LauncherPanelFactory {
         let hostingView = NSHostingView(rootView: rootView)
         hostingView.sizingOptions = []
         panel.contentView = hostingView
+        // 立即布局：让标题栏装饰高度可测，窗口起始高度就与 AppKit 的最小高度一致。
+        panel.layoutIfNeeded()
         return panel
     }
 }
