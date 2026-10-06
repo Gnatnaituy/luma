@@ -371,6 +371,168 @@ struct TwoFactorTests {
         )
     }
 
+    // MARK: - 导出文件批量导入
+
+    @Test
+    @MainActor
+    func exportFileImport() throws {
+        // 复刻 Ente Auth 明文导出的形态：每行一条链接，issuer 用 + 表示空格，
+        // 并带上插件不认识的 codeDisplay 参数。
+        let export = """
+        otpauth://totp/Aliyun%20%E5%A2%A8%E8%A5%BF%E5%93%A5:tiantangyu@5490201939098538?algorithm=sha1&digits=6&issuer=Aliyun+%E5%A2%A8%E8%A5%BF%E5%93%A5&period=30&secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ&codeDisplay=%7B%22pinned%22%3Afalse%7D
+        otpauth://totp/OpenAI:OpenAI?algorithm=sha1&digits=6&issuer=OpenAI&period=30&secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZA
+        otpauth://totp/%E8%8F%B2%E5%BE%8B%E5%AE%BESendGird:tracy@massser.com?algorithm=sha1&digits=6&issuer=%E8%8F%B2%E5%BE%8B%E5%AE%BESendGird&period=30&secret=JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP
+
+        这段说明文字里没有链接。
+        """
+
+        let links = OTPAuthURIParser.links(in: export)
+        try expect(links.count == 3, "every otpauth link in the file is found")
+        try expect(links.allSatisfy { $0.hasPrefix("otpauth://") }, "only otpauth tokens are collected")
+
+        let result = TwoFactorImporter.importFromExportText(export, fileName: "ente-auth-codes.txt")
+        try expect(result.items.count == 3, "each link becomes an import item")
+        try expect(result.drafts.count == 3, "every line parses into a draft")
+        try expect(result.sourceTitle == "ente-auth-codes.txt", "the import remembers the file name")
+
+        let aliyun = try #require(result.drafts.first)
+        try expect(aliyun.issuer == "Aliyun 墨西哥", "plus signs decode as spaces in the issuer")
+        try expect(aliyun.name == "tiantangyu@5490201939098538", "the account name is decoded")
+        try expect(aliyun.displaySubtitle.hasPrefix("tiantangyu@5490201939098538 · SHA1 · 6 位 · 30 秒"), "the subtitle stays localized")
+
+        let openAI = try #require(result.drafts.dropFirst().first)
+        try expect(openAI.issuer == "OpenAI" && openAI.name == "OpenAI", "a single-name account keeps its issuer")
+        try expect(openAI.displaySubtitle.hasPrefix("SHA1"), "the subtitle drops a duplicated account name")
+
+        // 写进临时文件后走真实的文件读取路径。
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("luma-twofactor-export-\(UUID().uuidString).txt")
+        try export.write(to: url, atomically: true, encoding: .utf8)
+        defer { try? FileManager.default.removeItem(at: url) }
+        let fromFile = try #require(TwoFactorImporter.importFromExportFile(url))
+        try expect(fromFile.drafts.count == 3, "the export file is read from disk")
+
+        // 批量写入：新增 2 个，第 3 个密钥重复。
+        let suiteName = "app.luma.twofactor-tests." + UUID().uuidString
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defaults.removePersistentDomain(forName: suiteName)
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let store = TwoFactorStore(defaults: defaults, secrets: InMemoryTwoFactorSecretStore())
+
+        let summary = store.addAll(result.drafts)
+        try expect(summary.added.count == 3 && summary.duplicates.isEmpty && summary.failed == 0, "the first import adds every account")
+        try expect(summary.message.contains("已添加 3 个账户"), "the summary reports the batch size")
+        try expect(summary.isProblem == false, "a clean import is not a problem")
+
+        let second = store.addAll(result.drafts)
+        try expect(second.added.isEmpty && second.duplicates.count == 3, "re-importing the same file adds nothing")
+        try expect(second.isProblem, "an all-duplicate import is reported as a problem")
+        try expect(second.message.contains("3 个密钥已存在"), "the summary names the duplicate count")
+        try expect(store.accounts.count == 3, "the store keeps exactly one copy of each account")
+
+        // 同一份导出里混入坏行时，好行照常导入。
+        let mixed = export + "\notpauth://totp/Broken:bob?secret=0189!!\n"
+        let mixedResult = TwoFactorImporter.importFromExportText(mixed, fileName: "mixed.txt")
+        try expect(mixedResult.items.count == 4 && mixedResult.drafts.count == 3, "a broken line does not block the rest")
+        try expect(mixedResult.items.last?.error == .invalidSecret, "the broken line reports its own error")
+    }
+
+    // MARK: - 密钥归档与补回
+
+    @Test
+    func secretArchiveRoundTrip() throws {
+        let first = UUID()
+        let second = UUID()
+        let encoded = TwoFactorSecretArchive.encode([first: "JBSWY3DPEHPK3PXP", second: "GEZDGNBVGY3TQOJQ"])
+        let decoded = try #require(TwoFactorSecretArchive.decode(encoded))
+        try expect(decoded == [first: "JBSWY3DPEHPK3PXP", second: "GEZDGNBVGY3TQOJQ"], "the archive round-trips")
+
+        try expect(TwoFactorSecretArchive.decode(Data("not json".utf8)) == nil, "corrupt payloads are rejected")
+        try expect(TwoFactorSecretArchive.decode(Data("{}".utf8))?.isEmpty == true, "an empty archive decodes to no secrets")
+        // 无法解析成 UUID 的键会被跳过，而不是让整包解码失败。
+        let mixed = try #require(TwoFactorSecretArchive.decode(Data(#"{"not-a-uuid":"x"}"#.utf8)))
+        try expect(mixed.isEmpty, "unknown keys are skipped")
+    }
+
+    @Test
+    @MainActor
+    func importRestoresSecretsInsteadOfDuplicating() throws {
+        let suiteName = "app.luma.twofactor-tests." + UUID().uuidString
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defaults.removePersistentDomain(forName: suiteName)
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let secrets = InMemoryTwoFactorSecretStore()
+        let store = TwoFactorStore(defaults: defaults, secrets: secrets)
+        let draft = TwoFactorAccountDraft(
+            issuer: "GitHub",
+            name: "alice",
+            secret: "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ"
+        )
+        guard case .added(let account) = store.add(draft) else {
+            throw TestFailure("the first add must succeed")
+        }
+
+        // 模拟密钥丢失：账户元数据还在，钥匙串里没有密钥。
+        secrets.removeSecret(for: account.id)
+        let restoredStore = TwoFactorStore(defaults: defaults, secrets: secrets)
+        try expect(restoredStore.accounts.count == 1, "the account metadata survives")
+        try expect(restoredStore.hasSecret(for: try #require(restoredStore.accounts.first)) == false, "the secret is gone")
+        try expect(restoredStore.missingSecretCount == 1, "the missing secret is reported")
+
+        // 重新导入同一份导出：补回密钥，而不是插入重复账户。
+        let orphan = try #require(restoredStore.accounts.first)
+        guard case .restored(let restored) = restoredStore.add(draft) else {
+            throw TestFailure("importing again must restore the missing secret")
+        }
+        try expect(restored.id == orphan.id, "the existing account is reused")
+        try expect(restoredStore.accounts.count == 1, "no duplicate account is created")
+        try expect(restoredStore.hasSecret(for: orphan), "the secret is back")
+        try expect(
+            restoredStore.code(for: orphan, at: Date(timeIntervalSince1970: 59)) == "287082",
+            "the restored secret generates the RFC vector code"
+        )
+
+        // 再导入一次就是普通重复。
+        try expect(restoredStore.add(draft) == .duplicate(orphan), "a third import reports a duplicate")
+
+        // 补回时用草稿里的参数刷新元数据（位数/算法可能已经改过）。
+        let updatedDraft = TwoFactorAccountDraft(
+            issuer: "GitHub",
+            name: "alice",
+            secret: "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ",
+            algorithm: .sha256,
+            digits: 8
+        )
+        secrets.removeSecret(for: orphan.id)
+        let third = TwoFactorStore(defaults: defaults, secrets: secrets)
+        guard case .restored(let refreshed) = third.add(updatedDraft) else {
+            throw TestFailure("restoring must also refresh metadata")
+        }
+        try expect(refreshed.algorithm == .sha256 && refreshed.digits == 8, "metadata follows the draft")
+    }
+
+    @Test
+    @MainActor
+    func unavailableKeychainBlocksWrites() throws {
+        let suiteName = "app.luma.twofactor-tests." + UUID().uuidString
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defaults.removePersistentDomain(forName: suiteName)
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        // 读不到密钥的存储：写入必须失败，而不是用一份空表覆盖已有密钥。
+        let store = TwoFactorStore(defaults: defaults, secrets: UnavailableSecretStore())
+        try expect(store.secretsUnavailable, "an unreadable keychain is reported")
+        try expect(
+            store.add(TwoFactorAccountDraft(issuer: "GitHub", name: "alice", secret: "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ")) == .failed,
+            "writes fail while the keychain is unreadable"
+        )
+        try expect(store.accounts.isEmpty, "nothing is written")
+
+        let summary = store.addAll([TwoFactorAccountDraft(issuer: "GitHub", name: "alice", secret: "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ")])
+        try expect(summary.failed == 1 && summary.isProblem, "the summary reports the failure")
+    }
+
     // MARK: - 辅助
 
     private func expect(_ condition: @autoclosure () throws -> Bool, _ name: String) throws {
@@ -396,4 +558,12 @@ private extension Result where Failure == OTPAuthImportError {
         if case .failure(let error) = self { return error }
         return nil
     }
+}
+
+/// 模拟钥匙串等待授权：读不到密钥，写入也必须拒绝。
+private final class UnavailableSecretStore: TwoFactorSecretStoring {
+    var isAvailable: Bool { false }
+    func secret(for id: UUID) -> String { "" }
+    func setSecret(_ secret: String, for id: UUID) -> Bool { false }
+    func removeSecret(for id: UUID) -> Bool { false }
 }

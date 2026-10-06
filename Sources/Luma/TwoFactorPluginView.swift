@@ -5,7 +5,7 @@ import UniformTypeIdentifiers
 enum TwoFactorEditorTab: String, CaseIterable, Identifiable {
     case manual
     case link
-    case qr
+    case bulk
 
     var id: String { rawValue }
 
@@ -13,7 +13,7 @@ enum TwoFactorEditorTab: String, CaseIterable, Identifiable {
         switch self {
         case .manual: L10n.text("手动输入", "Manual")
         case .link: L10n.text("粘贴链接", "Paste Link")
-        case .qr: L10n.text("二维码图片", "QR Image")
+        case .bulk: L10n.text("批量导入", "Bulk Import")
         }
     }
 
@@ -21,7 +21,7 @@ enum TwoFactorEditorTab: String, CaseIterable, Identifiable {
         switch self {
         case .manual: "keyboard"
         case .link: "link"
-        case .qr: "qrcode.viewfinder"
+        case .bulk: "tray.and.arrow.down"
         }
     }
 }
@@ -34,7 +34,7 @@ enum TwoFactorEditorTarget: Equatable {
 struct TwoFactorEditorSeed: Equatable {
     var target: TwoFactorEditorTarget = .create
     var tab: TwoFactorEditorTab = .manual
-    var importResult: TwoFactorQRImport?
+    var importResult: TwoFactorImport?
     var secret: String = ""
 
     static let create = TwoFactorEditorSeed()
@@ -43,8 +43,8 @@ struct TwoFactorEditorSeed: Equatable {
         TwoFactorEditorSeed(target: .edit(account), tab: .manual, importResult: nil, secret: secret)
     }
 
-    static func review(_ result: TwoFactorQRImport) -> TwoFactorEditorSeed {
-        TwoFactorEditorSeed(target: .create, tab: .qr, importResult: result, secret: "")
+    static func review(_ result: TwoFactorImport) -> TwoFactorEditorSeed {
+        TwoFactorEditorSeed(target: .create, tab: .bulk, importResult: result, secret: "")
     }
 }
 
@@ -149,7 +149,17 @@ struct TwoFactorPluginView: View {
 
             Spacer()
 
-            if store.missingSecretCount > 0 {
+            if store.secretsUnavailable {
+                Label(
+                    L10n.text(
+                        "无法读取钥匙串，请在系统弹窗中选择「始终允许」",
+                        "Cannot read the Keychain. Choose \"Always Allow\" in the system prompt."
+                    ),
+                    systemImage: "lock.trianglebadge.exclamationmark"
+                )
+                .font(.caption)
+                .foregroundStyle(.orange)
+            } else if store.missingSecretCount > 0 {
                 Label(
                     L10n.text("\(store.missingSecretCount) 个账户缺少密钥", "\(store.missingSecretCount) accounts are missing secrets"),
                     systemImage: "exclamationmark.triangle.fill"
@@ -220,6 +230,7 @@ struct TwoFactorPluginView: View {
                         isSelected: selectedID == account.id,
                         highlightsExpiring: store.highlightsExpiringCodes,
                         isConfirmingDeletion: pendingDeletion == account.id,
+                        isKeychainUnavailable: store.secretsUnavailable,
                         onCopy: { copy(account) },
                         onEdit: {
                             page = .editor(.edit(account, secret: store.secret(for: account) ?? ""))
@@ -281,7 +292,7 @@ struct TwoFactorPluginView: View {
 
     private func scanClipboardImage() {
         guard let image = TwoFactorClipboardImage.read() else {
-            page = .editor(TwoFactorEditorSeed(target: .create, tab: .qr, importResult: nil, secret: ""))
+            page = .editor(TwoFactorEditorSeed(target: .create, tab: .bulk, importResult: nil, secret: ""))
             return
         }
         page = .editor(.review(TwoFactorImporter.importFromClipboardImage(image)))
@@ -358,6 +369,7 @@ private struct TwoFactorAccountRow: View {
     let isSelected: Bool
     let highlightsExpiring: Bool
     let isConfirmingDeletion: Bool
+    let isKeychainUnavailable: Bool
     let onCopy: () -> Void
     let onEdit: () -> Void
     let onRequestDelete: () -> Void
@@ -446,9 +458,14 @@ private struct TwoFactorAccountRow: View {
                 .contentTransition(.numericText())
                 .animation(LumaMotion.quick, value: code)
         } else {
-            Label(L10n.text("密钥缺失", "Missing secret"), systemImage: "exclamationmark.triangle.fill")
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(.orange)
+            Label(
+                isKeychainUnavailable
+                    ? L10n.text("钥匙串未授权", "Keychain Not Authorized")
+                    : L10n.text("密钥缺失", "Missing secret"),
+                systemImage: "exclamationmark.triangle.fill"
+            )
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(.orange)
         }
     }
 
@@ -526,7 +543,7 @@ private struct TwoFactorEditorView: View {
     @State private var digits: Int
     @State private var period: Int
     @State private var linkText: String
-    @State private var importResult: TwoFactorQRImport?
+    @State private var importResult: TwoFactorImport?
     @State private var message: String?
     @State private var isErrorMessage = false
     @State private var didPrefillLink = false
@@ -599,7 +616,7 @@ private struct TwoFactorEditorView: View {
                         switch tab {
                         case .manual: manualForm
                         case .link: linkForm
-                        case .qr: qrForm
+                        case .bulk: bulkForm
                         }
                     }
 
@@ -627,7 +644,7 @@ private struct TwoFactorEditorView: View {
             Text(title).font(.headline)
             Spacer()
 
-            if isEditing || tab != .qr {
+            if isEditing || tab != .bulk {
                 Button(isEditing ? L10n.text("保存", "Save") : L10n.text("添加", "Add"), action: save)
                     .buttonStyle(LumaTextButtonStyle(emphasis: .primary, height: 28))
             }
@@ -770,7 +787,7 @@ private struct TwoFactorEditorView: View {
 
     // MARK: 二维码
 
-    private var qrForm: some View {
+    private var bulkForm: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 8) {
                 Button {
@@ -783,14 +800,21 @@ private struct TwoFactorEditorView: View {
                 Button {
                     chooseImageFile()
                 } label: {
-                    Label(L10n.text("选择图片…", "Choose Image…"), systemImage: "square.and.arrow.down")
+                    Label(L10n.text("选择图片…", "Choose Image…"), systemImage: "photo.badge.arrow.down")
+                }
+                .buttonStyle(LumaTextButtonStyle(height: 30))
+
+                Button {
+                    chooseExportFile()
+                } label: {
+                    Label(L10n.text("导入导出文件…", "Import Export File…"), systemImage: "doc.badge.plus")
                 }
                 .buttonStyle(LumaTextButtonStyle(height: 30))
             }
 
             Text(L10n.text(
-                "在任意界面按 ⌃⇧⌘4 截取二维码后回到这里识别；也可以直接选择保存好的截图。",
-                "Press ⌃⇧⌘4 to screenshot a QR code, then read it here. You can also pick a saved screenshot."
+                "在任意界面按 ⌃⇧⌘4 截取二维码后回到这里识别；也可以选择保存好的截图，或直接导入 Ente Auth 等应用的 otpauth 导出文件。",
+                "Press ⌃⇧⌘4 to screenshot a QR code, then read it here. You can also pick a saved screenshot or import an otpauth export file from Ente Auth and similar apps."
             ))
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -837,7 +861,7 @@ private struct TwoFactorEditorView: View {
         }
     }
 
-    private func importItemRow(_ item: TwoFactorQRImport.Item) -> some View {
+    private func importItemRow(_ item: TwoFactorImport.Item) -> some View {
         HStack(spacing: 12) {
             Image(systemName: item.draft == nil ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
                 .font(.system(size: 15))
@@ -949,43 +973,13 @@ private struct TwoFactorEditorView: View {
     }
 
     private func addAll(_ drafts: [TwoFactorAccountDraft]) {
-        var addedTitles: [String] = []
-        var duplicates: [String] = []
-        var failed = 0
-        for draft in drafts {
-            switch store.add(draft) {
-            case .added(let account): addedTitles.append(account.title)
-            case .duplicate(let existing): duplicates.append(existing.title)
-            case .failed: failed += 1
-            }
-        }
-
-        if !addedTitles.isEmpty, failed == 0 {
-            var text = addedTitles.count == 1
-                ? L10n.text("已添加「\(addedTitles[0])」", "Added \"\(addedTitles[0])\"")
-                : L10n.text("已添加 \(addedTitles.count) 个账户", "Added \(addedTitles.count) accounts")
-            if !duplicates.isEmpty {
-                text += L10n.text(
-                    "，\(duplicates.count) 个已存在",
-                    ", \(duplicates.count) already existed"
-                )
-            }
-            onFinish(text)
+        let summary = store.addAll(drafts)
+        guard !summary.isEmpty else { return }
+        guard summary.isProblem else {
+            onFinish(summary.message)
             return
         }
-
-        var parts: [String] = []
-        if !addedTitles.isEmpty {
-            parts.append(L10n.text("已添加 \(addedTitles.count) 个", "Added \(addedTitles.count)"))
-        }
-        if !duplicates.isEmpty {
-            parts.append(L10n.text(
-                "已存在相同密钥：\(duplicates.joined(separator: "、"))",
-                "Already added with the same secret: \(duplicates.joined(separator: ", "))"
-            ))
-        }
-        if failed > 0 { parts.append(L10n.text("有 \(failed) 个保存失败", "\(failed) could not be saved")) }
-        message = parts.joined(separator: "；")
+        message = summary.message
         isErrorMessage = true
     }
 
@@ -998,6 +992,20 @@ private struct TwoFactorEditorView: View {
         }
         message = nil
         importResult = TwoFactorImporter.importFromClipboardImage(image)
+    }
+
+    private func chooseExportFile() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.text, .json]
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.message = L10n.text(
+            "选择包含 otpauth:// 链接的导出文件",
+            "Choose an export file containing otpauth:// links"
+        )
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        message = nil
+        importResult = TwoFactorImporter.importFromExportFile(url)
     }
 
     private func chooseImageFile() {

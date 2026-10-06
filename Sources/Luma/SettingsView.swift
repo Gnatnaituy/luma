@@ -788,7 +788,17 @@ struct SettingsView: View {
                 }
             }
 
-            if twoFactor.missingSecretCount > 0 {
+            if twoFactor.secretsUnavailable {
+                Label(
+                    L10n.text(
+                        "当前无法读取钥匙串，两步验证验证码会暂时不可用；在系统弹窗中选择「始终允许」后即可恢复。",
+                        "The Keychain is not readable right now, so codes are temporarily unavailable. Choose \"Always Allow\" in the system prompt to restore access."
+                    ),
+                    systemImage: "lock.trianglebadge.exclamationmark"
+                )
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+            } else if twoFactor.missingSecretCount > 0 {
                 Label(
                     L10n.text(
                         "\(twoFactor.missingSecretCount) 个账户在钥匙串里找不到密钥，请在插件中重新添加。",

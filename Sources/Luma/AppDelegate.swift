@@ -91,6 +91,57 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         clipboard.stop()
     }
 
+    /// 用 Luma 打开导出文件即可批量导入两步验证账户（`open -a Luma <文件>`）。
+    ///
+    /// 导入必须由 Luma 自己完成：钥匙串条目的访问权限绑在写入方的代码身份上，由其它
+    /// 进程代写的条目会在 Luma 读取时逐个弹出授权框。
+    func application(_ application: NSApplication, open urls: [URL]) {
+        var summaries: [String] = []
+        var unreadable: [String] = []
+
+        for url in urls {
+            guard let result = TwoFactorImporter.importFromExportFile(url) else {
+                unreadable.append(url.lastPathComponent)
+                continue
+            }
+            guard !result.drafts.isEmpty else {
+                unreadable.append(url.lastPathComponent)
+                continue
+            }
+            let summary = twoFactor.addAll(result.drafts)
+            summaries.append(url.lastPathComponent + L10n.text("：", ": ") + summary.message)
+        }
+
+        guard !summaries.isEmpty || !unreadable.isEmpty else { return }
+        var lines = summaries
+        if !unreadable.isEmpty {
+            lines.append(L10n.text(
+                "未找到 otpauth:// 链接：\(unreadable.joined(separator: "、"))",
+                "No otpauth:// links found in: \(unreadable.joined(separator: ", "))"
+            ))
+        }
+        presentTwoFactorImportResult(lines.joined(separator: "\n"))
+    }
+
+    private func presentTwoFactorImportResult(_ text: String) {
+        // 随文件启动时这个回调早于 applicationDidFinishLaunching，面板还没建好；
+        // 排到下一个主队列任务，保证提示出现在启动完成之后。
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            let alert = NSAlert()
+            alert.messageText = L10n.text("两步验证导入结果", "Two-Factor Import Result")
+            alert.informativeText = text
+            alert.alertStyle = .informational
+            alert.addButton(withTitle: L10n.text("好", "OK"))
+            if let panel = self.panel, panel.isVisible {
+                alert.beginSheetModal(for: panel)
+            } else {
+                NSApp.activate(ignoringOtherApps: true)
+                alert.runModal()
+            }
+        }
+    }
+
     private func buildPanel() {
         let content = LauncherView(
             model: model,

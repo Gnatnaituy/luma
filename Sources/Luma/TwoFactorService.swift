@@ -222,16 +222,29 @@ enum OTPAuthURIParser {
     static let scheme = "otpauth://"
     static let migrationScheme = "otpauth-migration://"
 
-    /// 从任意文本（粘贴内容或二维码载荷）中取出第一条 otpauth 链接。
+    /// 从任意文本（粘贴内容、二维码载荷或导出文件）中取出第一条 otpauth 链接。
     static func firstLink(in text: String) -> String? {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return nil }
-        guard let range = trimmed.range(of: scheme, options: [.caseInsensitive]) else {
-            return trimmed.lowercased().hasPrefix(migrationScheme) ? trimmed : nil
+        links(in: text).first
+    }
+
+    /// 取出文本里的全部 otpauth 链接。
+    ///
+    /// Ente Auth 的明文导出是每行一条 `otpauth://` 链接，Aegis、2FAS 等导出里也常把链接
+    /// 作为字段值，所以按「以空白分隔的 token」逐个扫描，比按行切分更宽容。
+    static func links(in text: String) -> [String] {
+        var links: [String] = []
+        var remainder = Substring(text)
+        while let range = remainder.range(of: "otpauth", options: [.caseInsensitive]) {
+            let candidate = remainder[range.lowerBound...]
+            let end = candidate.firstIndex(where: \.isWhitespace) ?? candidate.endIndex
+            let token = String(candidate[candidate.startIndex..<end])
+            let lowercased = token.lowercased()
+            if lowercased.hasPrefix(scheme) || lowercased.hasPrefix(migrationScheme) {
+                links.append(token)
+            }
+            remainder = candidate[end...]
         }
-        let remainder = trimmed[range.lowerBound...]
-        let end = remainder.firstIndex(where: \.isWhitespace) ?? remainder.endIndex
-        return String(remainder[remainder.startIndex..<end])
+        return links
     }
 
     static func draft(from raw: String) -> Result<TwoFactorAccountDraft, OTPAuthImportError> {
@@ -314,52 +327,130 @@ protocol TwoFactorSecretStoring {
     func secret(for id: UUID) -> String
     @discardableResult func setSecret(_ secret: String, for id: UUID) -> Bool
     @discardableResult func removeSecret(for id: UUID) -> Bool
+    /// 密钥当前是否可读。钥匙串条目因为重新签名而等待授权时为 false。
+    var isAvailable: Bool { get }
 }
 
-/// 与 AI API Key 一致：TOTP 密钥只进 macOS 钥匙串，不写入偏好设置或导出文件。
-final class KeychainTwoFactorSecretStore: TwoFactorSecretStoring {
-    private let service = "app.luma.launcher.two-factor"
+extension TwoFactorSecretStoring {
+    var isAvailable: Bool { true }
+}
 
-    func secret(for id: UUID) -> String {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: id.uuidString,
-            kSecReturnData as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne
-        ]
-        var result: CFTypeRef?
-        guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
-              let data = result as? Data,
-              let value = String(data: data, encoding: .utf8) else { return "" }
-        return value
+/// 钥匙串条目里的 `{账户 id: 密钥}` 映射。
+enum TwoFactorSecretArchive {
+    static func encode(_ secrets: [UUID: String]) -> Data {
+        let payload = Dictionary(uniqueKeysWithValues: secrets.map { ($0.key.uuidString, $0.value) })
+        return (try? JSONEncoder().encode(payload)) ?? Data()
     }
 
+    static func decode(_ data: Data) -> [UUID: String]? {
+        guard let payload = try? JSONDecoder().decode([String: String].self, from: data) else {
+            return nil
+        }
+        var secrets: [UUID: String] = [:]
+        for (key, value) in payload {
+            guard let id = UUID(uuidString: key) else { continue }
+            secrets[id] = value
+        }
+        return secrets
+    }
+}
+
+/// 全部密钥合并成一个钥匙串条目。
+///
+/// 每个账户一个条目时，`install-app.sh` 每次重新构建都会改变 ad-hoc 签名，钥匙串 ACL 随之
+/// 失配，读 25 个账户就要授权 25 次；合并成一条后重新授权最多发生一次（与 AI API Key 相同）。
+/// 代价是读取失败时不能安全地做增量写入，因此读失败会让写入一并失败，由调用方如实报告，
+/// 而不是用一份空表覆盖掉已经存在的密钥。
+final class KeychainTwoFactorSecretStore: TwoFactorSecretStoring {
+    private let service = "app.luma.launcher.two-factor"
+    private let account = "secrets"
+
+    private var cached: [UUID: String]?
+    private var didFailToLoad = false
+
+    var isAvailable: Bool { cached != nil || !didFailToLoad }
+
+    func secret(for id: UUID) -> String {
+        load()[id] ?? ""
+    }
+
+    @discardableResult
     func setSecret(_ secret: String, for id: UUID) -> Bool {
-        if secret.isEmpty { return removeSecret(for: id) }
-        let key: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: id.uuidString
-        ]
-        let attributes: [String: Any] = [kSecValueData as String: Data(secret.utf8)]
-        let status = SecItemUpdate(key as CFDictionary, attributes as CFDictionary)
-        if status == errSecSuccess { return true }
-        guard status == errSecItemNotFound else { return false }
-        var item = key
-        item[kSecValueData as String] = Data(secret.utf8)
-        return SecItemAdd(item as CFDictionary, nil) == errSecSuccess
+        var secrets = load()
+        if secret.isEmpty {
+            guard secrets[id] != nil else { return true }
+            secrets[id] = nil
+        } else {
+            secrets[id] = secret
+        }
+        return persist(secrets)
     }
 
     @discardableResult
     func removeSecret(for id: UUID) -> Bool {
+        var secrets = load()
+        guard secrets[id] != nil else { return true }
+        secrets[id] = nil
+        return persist(secrets)
+    }
+
+    private func load() -> [UUID: String] {
+        if let cached { return cached }
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
-            kSecAttrAccount as String: id.uuidString
+            kSecAttrAccount as String: account,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne
         ]
-        let status = SecItemDelete(query as CFDictionary)
-        return status == errSecSuccess || status == errSecItemNotFound
+        var result: CFTypeRef?
+        switch SecItemCopyMatching(query as CFDictionary, &result) {
+        case errSecSuccess:
+            guard let data = result as? Data, let secrets = TwoFactorSecretArchive.decode(data) else {
+                didFailToLoad = true
+                return [:]
+            }
+            cached = secrets
+            didFailToLoad = false
+            return secrets
+        case errSecItemNotFound:
+            cached = [:]
+            didFailToLoad = false
+            return [:]
+        default:
+            // 不缓存空结果：用户完成授权后下一次读取会重新尝试。
+            didFailToLoad = true
+            return [:]
+        }
+    }
+
+    private func persist(_ secrets: [UUID: String]) -> Bool {
+        guard !didFailToLoad else { return false }
+        let data = TwoFactorSecretArchive.encode(secrets)
+        let key: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account
+        ]
+
+        // 应用刚被替换、重新签名后，钥匙串访问可能瞬时失败（实测一次 25 条的批量导入有 9 条
+        // 写入失败，重跑同一文件即全部成功），因此失败后重试一次，两次都失败才上报。
+        var status = errSecSuccess
+        for attempt in 0..<2 {
+            status = SecItemUpdate(key as CFDictionary, [kSecValueData as String: data] as CFDictionary)
+            if status == errSecItemNotFound {
+                var item = key
+                item[kSecValueData as String] = data
+                status = SecItemAdd(item as CFDictionary, nil)
+            }
+            if status == errSecSuccess {
+                cached = secrets
+                return true
+            }
+            if attempt == 0 { Thread.sleep(forTimeInterval: 0.05) }
+        }
+        NSLog("Luma two-factor keychain write failed: %d", status)
+        return false
     }
 }
 
@@ -454,6 +545,8 @@ struct TwoFactorAccount: Codable, Equatable, Identifiable {
 final class TwoFactorStore: ObservableObject {
     enum AddOutcome: Equatable {
         case added(TwoFactorAccount)
+        /// 账户已存在但密钥丢失，这次把密钥补了回来。
+        case restored(TwoFactorAccount)
         case duplicate(TwoFactorAccount)
         case failed
     }
@@ -505,6 +598,9 @@ final class TwoFactorStore: ObservableObject {
         accounts.filter { !hasSecret(for: $0) }.count
     }
 
+    /// 钥匙串当前读不到密钥（例如重新签名后等待授权）。此时缺失密钥不等于账户损坏。
+    var secretsUnavailable: Bool { !secrets.isAvailable }
+
     func accounts(matching query: String) -> [TwoFactorAccount] {
         let value = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !value.isEmpty else { return accounts }
@@ -516,7 +612,9 @@ final class TwoFactorStore: ObservableObject {
     func secret(for account: TwoFactorAccount) -> String? {
         if let cached = secretCache[account.id] { return cached.isEmpty ? nil : cached }
         let stored = secrets.secret(for: account.id)
-        secretCache[account.id] = stored
+        // 只缓存读到的密钥：钥匙串暂时不可用时不能把「空」缓存下来，否则用户完成授权后
+        // 账户仍会一直显示缺少密钥。
+        if !stored.isEmpty { secretCache[account.id] = stored }
         return stored.isEmpty ? nil : stored
     }
 
@@ -567,6 +665,25 @@ final class TwoFactorStore: ObservableObject {
         if let existing = accounts.first(where: { secret(for: $0) == value.normalizedSecret }) {
             return .duplicate(existing)
         }
+        // 账户还在、密钥没了（换了存储方式、从备份恢复、钥匙串条目被删）时补写密钥，
+        // 而不是再插一条同名账户。同名账户的标签相同、可互换，所以取第一个匹配项即可：
+        // 补回一个之后它就有密钥了，下一个同名草稿会自然落到下一个账户上。
+        if let orphan = accounts.first(where: {
+            !hasSecret(for: $0) && $0.issuer == value.issuer && $0.name == value.name
+        }) {
+            guard secrets.setSecret(value.normalizedSecret, for: orphan.id) else { return .failed }
+            secretCache[orphan.id] = value.normalizedSecret
+            codeCache[orphan.id] = nil
+            var restored = orphan
+            restored.algorithm = value.algorithm
+            restored.digits = value.digits
+            restored.period = value.period
+            if let index = accounts.firstIndex(where: { $0.id == orphan.id }) {
+                accounts[index] = restored
+            }
+            persist()
+            return .restored(restored)
+        }
         let account = TwoFactorAccount(draft: value, createdAt: date)
         guard secrets.setSecret(value.normalizedSecret, for: account.id) else { return .failed }
         secretCache[account.id] = value.normalizedSecret
@@ -578,6 +695,21 @@ final class TwoFactorStore: ObservableObject {
     @discardableResult
     func add(_ drafts: [TwoFactorAccountDraft], at date: Date = Date()) -> [AddOutcome] {
         drafts.map { add($0, at: date) }
+    }
+
+    /// 批量添加并汇总结果。插件页与「用 Luma 打开导出文件」共用同一套文案。
+    @discardableResult
+    func addAll(_ drafts: [TwoFactorAccountDraft], at date: Date = Date()) -> TwoFactorImportSummary {
+        var summary = TwoFactorImportSummary()
+        for draft in drafts {
+            switch add(draft, at: date) {
+            case .added(let account): summary.added.append(account)
+            case .restored(let account): summary.restored.append(account)
+            case .duplicate(let existing): summary.duplicates.append(existing)
+            case .failed: summary.failed += 1
+            }
+        }
+        return summary
     }
 
     @discardableResult
@@ -622,6 +754,51 @@ final class TwoFactorStore: ObservableObject {
     private func persist() {
         guard let data = try? JSONEncoder().encode(accounts) else { return }
         defaults.set(data, forKey: accountsKey)
+    }
+}
+
+/// 批量导入的结果。文案在这里统一生成，插件页与「用 Luma 打开导出文件」共用。
+struct TwoFactorImportSummary: Equatable {
+    var added: [TwoFactorAccount] = []
+    /// 账户本来就在、这次只补回了密钥的数量。
+    var restored: [TwoFactorAccount] = []
+    var duplicates: [TwoFactorAccount] = []
+    var failed = 0
+
+    var isEmpty: Bool { added.isEmpty && restored.isEmpty && duplicates.isEmpty && failed == 0 }
+
+    /// 一个都没写进去（全部重复或全部失败）时按错误样式展示。
+    var isProblem: Bool { added.isEmpty && restored.isEmpty }
+
+    var message: String {
+        var parts: [String] = []
+        if added.count == 1, let account = added.first {
+            parts.append(L10n.text("已添加「\(account.title)」", "Added \"\(account.title)\""))
+        } else if !added.isEmpty {
+            parts.append(L10n.text("已添加 \(added.count) 个账户", "Added \(added.count) accounts"))
+        }
+
+        if !restored.isEmpty {
+            parts.append(L10n.text(
+                "已补回 \(restored.count) 个账户的密钥",
+                "Restored secrets for \(restored.count) accounts"
+            ))
+        }
+
+        if !duplicates.isEmpty {
+            let titles = duplicates.map(\.title)
+            let shown = titles.prefix(3).joined(separator: L10n.text("、", ", "))
+            let suffix = titles.count > 3 ? L10n.text(" 等", " and others") : ""
+            parts.append(L10n.text(
+                "\(duplicates.count) 个密钥已存在：\(shown)\(suffix)",
+                "\(duplicates.count) already added: \(shown)\(suffix)"
+            ))
+        }
+
+        if failed > 0 {
+            parts.append(L10n.text("\(failed) 个无法保存", "\(failed) could not be saved"))
+        }
+        return parts.joined(separator: L10n.text("；", "; "))
     }
 }
 
@@ -698,7 +875,7 @@ enum TwoFactorClipboardImage {
 
 // MARK: - 导入
 
-struct TwoFactorQRImport: Equatable {
+struct TwoFactorImport: Equatable {
     enum Source: Equatable {
         case clipboard
         case file(String)
@@ -734,31 +911,44 @@ struct TwoFactorQRImport: Equatable {
 }
 
 enum TwoFactorImporter {
-    static func importFromClipboardImage(_ image: NSImage) -> TwoFactorQRImport {
+    static func importFromClipboardImage(_ image: NSImage) -> TwoFactorImport {
         make(payloads: TwoFactorQRCodeDecoder.payloads(in: image), source: .clipboard)
     }
 
-    static func importFromClipboard() -> TwoFactorQRImport? {
+    static func importFromClipboard() -> TwoFactorImport? {
         guard let image = TwoFactorClipboardImage.read() else { return nil }
         return importFromClipboardImage(image)
     }
 
-    static func importFromFile(_ url: URL) -> TwoFactorQRImport {
+    static func importFromFile(_ url: URL) -> TwoFactorImport {
         make(
             payloads: TwoFactorQRCodeDecoder.payloads(in: url),
             source: .file(url.lastPathComponent)
         )
     }
 
-    static func importFromText(_ text: String) -> TwoFactorQRImport? {
+    static func importFromText(_ text: String) -> TwoFactorImport? {
         guard let link = OTPAuthURIParser.firstLink(in: text) else { return nil }
         return make(payloads: [link], source: .clipboard)
     }
 
-    static func make(payloads: [String], source: TwoFactorQRImport.Source) -> TwoFactorQRImport {
-        TwoFactorQRImport(
+    /// 读取导出文件（Ente Auth 明文导出、逐行 otpauth 链接、含链接的 JSON 等）。
+    static func importFromExportFile(_ url: URL) -> TwoFactorImport? {
+        guard let data = try? Data(contentsOf: url, options: .mappedIfSafe) else { return nil }
+        let text = String(data: data, encoding: .utf8)
+            ?? String(data: data, encoding: .isoLatin1)
+        guard let text else { return nil }
+        return importFromExportText(text, fileName: url.lastPathComponent)
+    }
+
+    static func importFromExportText(_ text: String, fileName: String) -> TwoFactorImport {
+        make(payloads: OTPAuthURIParser.links(in: text), source: .file(fileName))
+    }
+
+    static func make(payloads: [String], source: TwoFactorImport.Source) -> TwoFactorImport {
+        TwoFactorImport(
             source: source,
-            items: payloads.map { TwoFactorQRImport.Item(payload: $0, result: OTPAuthURIParser.draft(from: $0)) }
+            items: payloads.map { TwoFactorImport.Item(payload: $0, result: OTPAuthURIParser.draft(from: $0)) }
         )
     }
 }
