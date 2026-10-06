@@ -11,9 +11,11 @@ struct PluginDetailView: View {
     @ObservedObject var stocks: StockStore
     @ObservedObject var weather: WeatherStore
     @ObservedObject var translationSettings: TranslationSettings
+    @ObservedObject var twoFactor: TwoFactorStore
     let selectedText: String
     let arrangeWindow: (WindowLayout) -> Void
     let pasteClipboardEntry: (ClipboardEntry) -> Void
+    let dismiss: () -> Void
 
     @ViewBuilder
     var body: some View {
@@ -22,6 +24,7 @@ struct PluginDetailView: View {
         case .calculator: CalculatorPluginView()
         case .json: JSONPluginView(clipboard: clipboard)
         case .password: PasswordPluginView(clipboard: clipboard)
+        case .twoFactor: TwoFactorPluginView(store: twoFactor, clipboard: clipboard, dismiss: dismiss)
         case .translate: TranslationPluginView(clipboard: clipboard, settings: translationSettings, preferredInput: selectedText)
         case .code: CodePluginView(clipboard: clipboard)
         case .stocks: StocksPluginView(store: stocks)

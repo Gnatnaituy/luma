@@ -842,7 +842,7 @@ struct CoreTests {
         try expect(
             SettingsCategory.allCases.map(\.title) == ["应用设置", "插件设置"]
                 && SettingsCategory.application.sections.map(\.title) == ["通用设置", "快捷键管理"]
-                && SettingsCategory.plugins.sections.map(\.title) == ["插件管理", "剪贴板设置", "AI 管理", "翻译设置", "股票设置", "天气设置"],
+                && SettingsCategory.plugins.sections.map(\.title) == ["插件管理", "剪贴板设置", "两步验证设置", "AI 管理", "翻译设置", "股票设置", "天气设置"],
             "settings navigation groups application and plugin configuration"
         )
         let applicationSuiteName = "app.luma.application-tests." + UUID().uuidString

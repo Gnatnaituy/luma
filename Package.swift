@@ -20,7 +20,8 @@ let package = Package(
                 .linkedFramework("Security"),
                 .linkedFramework("ServiceManagement"),
                 .linkedFramework("SwiftUI"),
-                .linkedFramework("Translation")
+                .linkedFramework("Translation"),
+                .linkedFramework("Vision")
             ]
         ),
         .testTarget(

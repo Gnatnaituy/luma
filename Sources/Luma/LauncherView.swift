@@ -11,6 +11,7 @@ struct LauncherView: View {
     @ObservedObject var pluginSettings: PluginSettings
     @ObservedObject var aiSettings: AISettings
     @ObservedObject var translationSettings: TranslationSettings
+    @ObservedObject var twoFactor: TwoFactorStore
     let pasteClipboardEntry: (ClipboardEntry) -> Void
     let arrangeWindow: (WindowLayout) -> Void
     let dismiss: () -> Void
@@ -93,9 +94,11 @@ struct LauncherView: View {
                     stocks: stocks,
                     weather: weather,
                     translationSettings: translationSettings,
+                    twoFactor: twoFactor,
                     selectedText: model.selectedText,
                     arrangeWindow: arrangeWindow,
-                    pasteClipboardEntry: pasteClipboardEntry
+                    pasteClipboardEntry: pasteClipboardEntry,
+                    dismiss: dismiss
                 )
             }
         case .settings:
@@ -107,7 +110,8 @@ struct LauncherView: View {
                 weather: weather,
                 clipboard: clipboard,
                 aiSettings: aiSettings,
-                translationSettings: translationSettings
+                translationSettings: translationSettings,
+                twoFactor: twoFactor
             )
         case .search:
             RecentItemsView(model: model)

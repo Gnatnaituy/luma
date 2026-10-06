@@ -34,6 +34,7 @@ swiftc \
   -framework Security \
   -framework ServiceManagement \
   -framework Translation \
+  -framework Vision \
   "${SOURCE_FILES[@]}" \
   -o "$EXECUTABLE"
 

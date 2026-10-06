@@ -25,6 +25,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
     case shortcuts
     case pluginKeywords
     case clipboard
+    case twoFactor
     case ai
     case translation
     case stocks
@@ -38,6 +39,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .shortcuts: L10n.text("快捷键管理", "Shortcuts")
         case .pluginKeywords: L10n.text("插件管理", "Plugin Management")
         case .clipboard: L10n.text("剪贴板设置", "Clipboard")
+        case .twoFactor: L10n.text("两步验证设置", "Two-Factor")
         case .ai: L10n.text("AI 管理", "AI")
         case .translation: L10n.text("翻译设置", "Translation")
         case .stocks: L10n.text("股票设置", "Stocks")
@@ -49,7 +51,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         switch self {
         case .application, .shortcuts:
             .application
-        case .pluginKeywords, .clipboard, .ai, .translation, .stocks, .weather:
+        case .pluginKeywords, .clipboard, .twoFactor, .ai, .translation, .stocks, .weather:
             .plugins
         }
     }
@@ -60,6 +62,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .shortcuts: L10n.text("配置全局唤起与关键词快捷键", "Configure global and keyword shortcuts")
         case .pluginKeywords: L10n.text("控制插件启用状态与搜索关键词", "Control plugin availability and search keywords")
         case .clipboard: L10n.text("设置历史记录的本地保存时长", "Configure local clipboard history retention")
+        case .twoFactor: L10n.text("管理动态口令账户与复制行为", "Manage TOTP accounts and copy behavior")
         case .ai: L10n.text("管理供应商、API 协议、密钥与模型", "Manage providers, API formats, keys, and models")
         case .translation: L10n.text("选择系统翻译或指定 AI 模型", "Choose Apple Translation or a configured AI model")
         case .stocks: L10n.text("设置行情涨跌颜色主题", "Configure market data and price colors")
@@ -73,6 +76,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .shortcuts: "keyboard"
         case .pluginKeywords: "text.badge.plus"
         case .clipboard: "clipboard"
+        case .twoFactor: "lock.badge.clock"
         case .ai: "brain.head.profile"
         case .translation: "character.bubble"
         case .stocks: "chart.line.uptrend.xyaxis"
@@ -90,8 +94,10 @@ struct SettingsView: View {
     @ObservedObject var clipboard: ClipboardMonitor
     @ObservedObject var aiSettings: AISettings
     @ObservedObject var translationSettings: TranslationSettings
+    @ObservedObject var twoFactor: TwoFactorStore
     @State private var selection: SettingsSection = .application
     @State private var backupMessage = ""
+    @State private var isConfirmingTwoFactorReset = false
 
     private var sidebarWidth: CGFloat {
         switch applicationSettings.language {
@@ -109,6 +115,7 @@ struct SettingsView: View {
         clipboard: ClipboardMonitor,
         aiSettings: AISettings,
         translationSettings: TranslationSettings,
+        twoFactor: TwoFactorStore,
         initialSelection: SettingsSection = .application
     ) {
         self.applicationSettings = applicationSettings
@@ -119,6 +126,7 @@ struct SettingsView: View {
         self.clipboard = clipboard
         self.aiSettings = aiSettings
         self.translationSettings = translationSettings
+        self.twoFactor = twoFactor
         _selection = State(initialValue: initialSelection)
     }
 
@@ -219,6 +227,8 @@ struct SettingsView: View {
             pluginContent
         case .clipboard:
             clipboardContent
+        case .twoFactor:
+            twoFactorContent
         case .ai:
             AIManagementView(settings: aiSettings)
         case .translation:
@@ -687,6 +697,115 @@ struct SettingsView: View {
                     "Reducing retention immediately removes expired unfavorited items."
                 ),
                 systemImage: "clock.arrow.circlepath"
+            )
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .settingsCard()
+    }
+
+    private var twoFactorContent: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(alignment: .center, spacing: 24) {
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(L10n.text("复制后收起面板", "Hide Panel After Copying"))
+                        .font(.headline)
+                    Text(L10n.text(
+                        "复制验证码后立即隐藏 Luma，方便直接粘贴到目标窗口。",
+                        "Hide Luma right after copying a code so it can be pasted immediately."
+                    ))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Toggle(
+                    L10n.text("启用", "Enable"),
+                    isOn: Binding(
+                        get: { twoFactor.autoDismissesAfterCopy },
+                        set: { twoFactor.autoDismissesAfterCopy = $0 }
+                    )
+                )
+                .toggleStyle(LumaToggleStyle())
+            }
+
+            Divider()
+
+            HStack(alignment: .center, spacing: 24) {
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(L10n.text("即将失效时提醒", "Highlight Expiring Codes"))
+                        .font(.headline)
+                    Text(L10n.text(
+                        "剩余时间不足 5 秒时把验证码与倒计时环标红。",
+                        "Mark codes and countdown rings red when fewer than 5 seconds remain."
+                    ))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Toggle(
+                    L10n.text("启用", "Enable"),
+                    isOn: Binding(
+                        get: { twoFactor.highlightsExpiringCodes },
+                        set: { twoFactor.highlightsExpiringCodes = $0 }
+                    )
+                )
+                .toggleStyle(LumaToggleStyle())
+            }
+
+            Divider()
+
+            HStack(alignment: .center, spacing: 24) {
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(L10n.text("账户", "Accounts"))
+                        .font(.headline)
+                    Text(L10n.text(
+                        "共 \(twoFactor.accounts.count) 个账户，密钥保存在 macOS 钥匙串，导出配置时不会包含。",
+                        "\(twoFactor.accounts.count) accounts. Secrets live in the macOS Keychain and are never exported."
+                    ))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                if isConfirmingTwoFactorReset {
+                    HStack(spacing: 8) {
+                        Button(L10n.text("确认清空", "Clear All"), role: .destructive) {
+                            twoFactor.removeAll()
+                            isConfirmingTwoFactorReset = false
+                        }
+                        .buttonStyle(LumaTextButtonStyle(emphasis: .destructive))
+                        Button(L10n.text("取消", "Cancel")) {
+                            isConfirmingTwoFactorReset = false
+                        }
+                        .buttonStyle(LumaTextButtonStyle())
+                    }
+                    .fixedSize()
+                } else {
+                    Button(L10n.text("清空全部账户", "Clear All Accounts"), role: .destructive) {
+                        isConfirmingTwoFactorReset = true
+                    }
+                    .buttonStyle(LumaTextButtonStyle(emphasis: .destructive))
+                    .disabled(twoFactor.accounts.isEmpty)
+                }
+            }
+
+            if twoFactor.missingSecretCount > 0 {
+                Label(
+                    L10n.text(
+                        "\(twoFactor.missingSecretCount) 个账户在钥匙串里找不到密钥，请在插件中重新添加。",
+                        "\(twoFactor.missingSecretCount) accounts have no secret in the Keychain. Add them again in the plugin."
+                    ),
+                    systemImage: "exclamationmark.triangle.fill"
+                )
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+            }
+
+            Label(
+                L10n.text(
+                    "二维码截图只在本机用 Vision 识别，不会上传到任何服务器。",
+                    "QR screenshots are decoded on device with Vision and never leave the Mac."
+                ),
+                systemImage: "lock.shield"
             )
                 .font(.caption)
                 .foregroundStyle(.secondary)

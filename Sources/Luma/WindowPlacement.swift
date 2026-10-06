@@ -144,8 +144,9 @@ enum LauncherPanelDecoration {
 enum LauncherPanelDismissalPolicy {
     static func shouldDismissOnResignKey(
         isPresentingSheet: Bool,
-        hasAttachedSheet: Bool
+        hasAttachedSheet: Bool,
+        hasModalWindow: Bool = false
     ) -> Bool {
-        !isPresentingSheet && !hasAttachedSheet
+        !isPresentingSheet && !hasAttachedSheet && !hasModalWindow
     }
 }

@@ -12,6 +12,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private let shortcutSettings = ShortcutSettings()
     private let pluginSettings = PluginSettings()
     private let aiSettings = AISettings()
+    private let twoFactor = TwoFactorStore()
     private lazy var translationSettings = TranslationSettings(aiSettings: aiSettings)
     private let installedApps = InstalledAppIndex()
     private let recentUsage = RecentUsageStore()
@@ -101,6 +102,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             pluginSettings: pluginSettings,
             aiSettings: aiSettings,
             translationSettings: translationSettings,
+            twoFactor: twoFactor,
             pasteClipboardEntry: { [weak self] entry in
                 self?.pasteClipboardEntry(entry)
             },
@@ -376,7 +378,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         guard let panel,
               LauncherPanelDismissalPolicy.shouldDismissOnResignKey(
                   isPresentingSheet: isShowingPastePermissionAlert,
-                  hasAttachedSheet: panel.attachedSheet != nil
+                  hasAttachedSheet: panel.attachedSheet != nil,
+                  // 文件选择、导出面板等模态窗口会抢走 key，此时不应收起启动器。
+                  hasModalWindow: NSApp.modalWindow != nil
               ) else { return }
         panel.orderOut(nil)
     }

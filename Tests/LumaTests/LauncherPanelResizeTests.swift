@@ -196,6 +196,7 @@ private final class LauncherPanelFixture {
         let weather = WeatherStore(defaults: defaults)
         let aiSettings = AISettings(defaults: defaults, secrets: InMemoryAISecretStore())
         let translationSettings = TranslationSettings(aiSettings: aiSettings, defaults: defaults)
+        let twoFactor = TwoFactorStore(defaults: defaults, secrets: InMemoryTwoFactorSecretStore())
 
         let content = LauncherView(
             model: model,
@@ -207,6 +208,7 @@ private final class LauncherPanelFixture {
             pluginSettings: pluginSettings,
             aiSettings: aiSettings,
             translationSettings: translationSettings,
+            twoFactor: twoFactor,
             pasteClipboardEntry: { _ in },
             arrangeWindow: { _ in },
             dismiss: {}
