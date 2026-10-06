@@ -58,52 +58,28 @@ struct CalculatorPluginView: View {
     @State private var errorMessage: String?
     @FocusState private var isExpressionFocused: Bool
 
+    private var trimmedExpression: String {
+        expression.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// 版式与其它插件一致：顶部一条固定输入栏，历史记录占满剩余高度并自行滚动。
+    ///
+    /// 历史最多 15 条（约 675pt），原先直接堆在 `VStack` 里、没有滚动容器：内容最小高度
+    /// 超过面板可用高度后整列溢出，顶部工具栏被挤出可视区域，看起来就像搜索栏消失了。
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            TextField("", text: $expression)
-                .font(.system(size: 20, design: .monospaced))
-                .textFieldStyle(.plain)
-                .foregroundStyle(Color.black)
-                .padding(.horizontal, 12)
-                .frame(height: 42)
-                .background(Color.white, in: RoundedRectangle(cornerRadius: 8))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 8)
-                        .stroke(Color.black.opacity(0.12), lineWidth: 1)
-                }
-                .focused($isExpressionFocused)
-                .onSubmit(calculate)
-                .accessibilityLabel(L10n.text("计算表达式", "Calculate Expression"))
+        VStack(spacing: 0) {
+            toolbar
 
             if let errorMessage {
                 Label(errorMessage, systemImage: "exclamationmark.triangle")
                     .font(.caption)
                     .foregroundStyle(.orange)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 24)
+                    .padding(.bottom, 8)
             }
 
-            VStack(spacing: 5) {
-                ForEach(history.records) { record in
-                    HStack(spacing: 12) {
-                        Text(record.expression)
-                            .font(.system(.body, design: .monospaced))
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                        Spacer(minLength: 20)
-                        Text("= \(record.result)")
-                            .font(.system(.body, design: .monospaced).weight(.semibold))
-                            .lineLimit(1)
-                            .textSelection(.enabled)
-                    }
-                    .padding(.horizontal, 12)
-                    .frame(height: 40)
-                    .background(
-                        LumaTone.cardFill,
-                        in: RoundedRectangle(cornerRadius: 8)
-                    )
-                }
-            }
-
-            Spacer(minLength: 0)
+            content
 
             Text(L10n.text(
                 "支持 + − × ÷ % ^、括号，以及 sqrt / sin / cos / tan / abs / log / ln。",
@@ -111,17 +87,84 @@ struct CalculatorPluginView: View {
             ))
                 .font(.caption)
                 .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 24)
+                .padding(.vertical, 10)
         }
-        .padding(24)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .onAppear { DispatchQueue.main.async { isExpressionFocused = true } }
     }
 
+    /// 顶部输入栏沿用其它插件的控件填充与内边距，回车或点按等号计算。
+    private var toolbar: some View {
+        HStack(spacing: 7) {
+            TextField(
+                L10n.text("输入算式，如 (12 + 3) × 4", "Enter an expression, e.g. (12 + 3) × 4"),
+                text: $expression
+            )
+                .textFieldStyle(LumaTextFieldStyle())
+                .font(.system(size: 14, design: .monospaced))
+                .focused($isExpressionFocused)
+                .onSubmit(calculate)
+                .accessibilityLabel(L10n.text("计算表达式", "Calculate Expression"))
+
+            Button(action: calculate) {
+                Image(systemName: "equal")
+            }
+            .buttonStyle(LumaIconButtonStyle())
+            .disabled(trimmedExpression.isEmpty)
+            .help(L10n.text("计算", "Calculate"))
+        }
+        .padding(.horizontal, 24)
+        .padding(.vertical, 10)
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        if history.records.isEmpty {
+            ContentUnavailableView(
+                L10n.text("还没有计算记录", "No Calculations Yet"),
+                systemImage: "function",
+                description: Text(L10n.text(
+                    "在上方输入算式并按回车，结果会保存在这里",
+                    "Enter an expression above and press Return; results are kept here"
+                ))
+            )
+        } else {
+            // 与剪贴板插件一样最新的在最上面，刚算完的结果不用滚动就能看到。
+            ScrollView {
+                LazyVStack(spacing: 5) {
+                    ForEach(history.records.reversed()) { record in
+                        HStack(spacing: 12) {
+                            Text(record.expression)
+                                .font(.system(.body, design: .monospaced))
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                            Spacer(minLength: 20)
+                            Text("= \(record.result)")
+                                .font(.system(.body, design: .monospaced).weight(.semibold))
+                                .lineLimit(1)
+                                .textSelection(.enabled)
+                        }
+                        .padding(.horizontal, 12)
+                        .frame(height: 40)
+                        .background(
+                            LumaTone.cardFill,
+                            in: RoundedRectangle(cornerRadius: 8)
+                        )
+                    }
+                }
+                .padding(.horizontal, 24)
+                .padding(.bottom, 12)
+            }
+        }
+    }
+
     private func calculate() {
-        let source = expression.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !source.isEmpty else { return }
+        guard !trimmedExpression.isEmpty else { return }
         do {
-            let result = ExpressionEvaluator.display(try ExpressionEvaluator.evaluate(source))
-            history.append(expression: source, result: result)
+            let result = ExpressionEvaluator.display(try ExpressionEvaluator.evaluate(trimmedExpression))
+            history.append(expression: trimmedExpression, result: result)
             expression = ""
             errorMessage = nil
         } catch {
