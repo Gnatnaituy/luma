@@ -8,10 +8,27 @@ enum AIAPIFormat: String, CaseIterable, Codable, Identifiable {
 
     var id: String { rawValue }
 
+    /// 选择器里显示的协议名；端点路径放进 `detail`，避免下拉框被长标题撑宽。
     var title: String {
         switch self {
-        case .openAIChatCompletions: "OpenAI Chat Completions (/chat/completions)"
-        case .anthropicMessages: "Anthropic Messages (/v1/messages)"
+        case .openAIChatCompletions: "OpenAI Chat Completions"
+        case .anthropicMessages: "Anthropic Messages"
+        }
+    }
+
+    /// 该协议实际使用的请求路径与鉴权方式。
+    var detail: String {
+        switch self {
+        case .openAIChatCompletions:
+            L10n.text(
+                "请求 /chat/completions，使用 Bearer 鉴权。",
+                "Requests /chat/completions and authenticates with a bearer token."
+            )
+        case .anthropicMessages:
+            L10n.text(
+                "请求 /v1/messages，使用 x-api-key 鉴权。",
+                "Requests /v1/messages and authenticates with x-api-key."
+            )
         }
     }
 }
@@ -104,6 +121,7 @@ final class InMemoryAISecretStore: AISecretStoring {
 
 final class AISettings: ObservableObject {
     @Published private(set) var providers: [AIProviderConfiguration]
+    /// 列表中展开（显示配置）的供应商；为 nil 时全部收起。
     @Published var selectedProviderID: UUID? {
         didSet { defaults.set(selectedProviderID?.uuidString, forKey: selectedProviderKey) }
     }
@@ -126,10 +144,6 @@ final class AISettings: ObservableObject {
         selectedProviderID = savedSelection.flatMap { selected in
             providers.contains(where: { $0.id == selected }) ? selected : nil
         } ?? providers.first?.id
-    }
-
-    var selectedProvider: AIProviderConfiguration? {
-        provider(id: selectedProviderID)
     }
 
     var enabledProviders: [AIProviderConfiguration] {

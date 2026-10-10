@@ -232,7 +232,11 @@ struct SettingsView: View {
         case .ai:
             AIManagementView(settings: aiSettings)
         case .translation:
-            TranslationSettingsView(settings: translationSettings, aiSettings: aiSettings)
+            TranslationSettingsView(
+                settings: translationSettings,
+                aiSettings: aiSettings,
+                openAISettings: { selection = .ai }
+            )
         case .stocks:
             stockContent
         case .weather:
@@ -394,13 +398,15 @@ struct SettingsView: View {
                         .font(.system(.subheadline, design: .monospaced).weight(.semibold))
                         .foregroundStyle(.secondary)
                         .frame(minWidth: 42, alignment: .trailing)
+                    // 不用 Slider 的 `step`：0...1 按 0.01 分档会画出 101 条刻度，
+                    // 密集到在轨道下方连成一条横线。改为在绑定里取整到 1%，
+                    // 既保留原来 1% 的调节粒度，又不显示刻度。
                     Slider(
                         value: Binding(
                             get: { applicationSettings.panelTransparency },
-                            set: applicationSettings.setPanelTransparency
+                            set: { applicationSettings.setPanelTransparency(($0 * 100).rounded() / 100) }
                         ),
-                        in: 0...1,
-                        step: 0.01
+                        in: 0...1
                     )
                     .frame(width: 210)
                     .accessibilityLabel(L10n.text("面板透明度", "Panel Transparency"))
@@ -601,32 +607,7 @@ struct SettingsView: View {
     }
 
     private var pluginContent: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text(L10n.text(
-                "停用的插件不会出现在搜索结果中；关键词均可直接修改或新增。",
-                "Disabled plugins are hidden from search. Keywords can be edited or added."
-            ))
-                .font(.caption)
-                .foregroundStyle(.secondary)
-
-            ForEach(Plugin.allCases) { plugin in
-                pluginRow(plugin)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 14)
-                    .background(Color.primary.opacity(plugins.isEnabled(plugin) ? 0.025 : 0.012))
-                    .overlay(alignment: .bottom) { Divider() }
-                    .overlay(alignment: .leading) {
-                        Rectangle()
-                            .fill(
-                                plugins.isEnabled(plugin)
-                                    ? plugin.tint.opacity(0.72)
-                                    : Color.secondary.opacity(0.3)
-                            )
-                            .frame(width: 3)
-                            .padding(.vertical, 14)
-                    }
-            }
-        }
+        PluginManagementView(plugins: plugins)
     }
 
     private var clipboardContent: some View {
@@ -992,32 +973,108 @@ struct SettingsView: View {
             }
         }
     }
+}
 
-    @ViewBuilder
-    private func pluginRow(_ plugin: Plugin) -> some View {
-        let configuration = plugins.configuration(for: plugin)
+/// 插件管理：一行一个插件，点击展开关键词配置；与「AI 管理」的供应商列表同一种列表形态。
+struct PluginManagementView: View {
+    @ObservedObject var plugins: PluginSettings
+    @State private var expandedPlugin: Plugin?
+
+    var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 12) {
-                Image(systemName: plugin.symbol)
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(plugin.tint)
-                    .frame(width: 34, height: 34)
-                    .background(plugin.tint.opacity(0.11), in: RoundedRectangle(cornerRadius: 8))
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(plugin.title).font(.subheadline.weight(.semibold))
-                    Text(plugin.subtitle).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
-                }
-                Spacer()
-                Toggle(
-                    L10n.text("启用", "Enable"),
-                    isOn: Binding(
-                        get: { plugins.isEnabled(plugin) },
-                        set: { plugins.setEnabled($0, for: plugin) }
-                    )
-                )
-                .toggleStyle(LumaToggleStyle())
-            }
+            Text(L10n.text(
+                "点击插件可展开关键词配置；停用的插件不会出现在搜索结果中。",
+                "Click a plugin to expand its keywords. Disabled plugins are hidden from search."
+            ))
+                .font(.caption)
+                .foregroundStyle(.secondary)
 
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(Plugin.allCases) { plugin in
+                    pluginBlock(plugin)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 14)
+                        .background(Color.primary.opacity(plugins.isEnabled(plugin) ? 0.025 : 0.012))
+                        .overlay(alignment: .leading) {
+                            Rectangle()
+                                .fill(
+                                    plugins.isEnabled(plugin)
+                                        ? plugin.tint.opacity(0.72)
+                                        : Color.secondary.opacity(0.3)
+                                )
+                                .frame(width: 3)
+                                .padding(.vertical, 14)
+                        }
+                        // 最后一行不画分隔线，交给外框收口。
+                        .overlay(alignment: .bottom) {
+                            if plugin != Plugin.allCases.last { Divider() }
+                        }
+                }
+            }
+            .clipShape(RoundedRectangle(cornerRadius: LumaRadius.card, style: .continuous))
+            .overlay { LumaRimStroke(cornerRadius: LumaRadius.card) }
+        }
+        .animation(LumaMotion.quick, value: expandedPlugin)
+    }
+
+    private func pluginBlock(_ plugin: Plugin) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            pluginHeaderRow(plugin)
+
+            if expandedPlugin == plugin {
+                keywordEditor(plugin)
+                    .padding(.top, 12)
+                    .padding(.leading, 46)
+            }
+        }
+    }
+
+    private func pluginHeaderRow(_ plugin: Plugin) -> some View {
+        HStack(spacing: 12) {
+            // 展开区域只覆盖图标与名称，右侧开关有自己的点击目标。
+            Button {
+                expandedPlugin = expandedPlugin == plugin ? nil : plugin
+            } label: {
+                HStack(spacing: 12) {
+                    Image(systemName: plugin.symbol)
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(plugin.tint)
+                        .frame(width: 34, height: 34)
+                        .background(plugin.tint.opacity(0.11), in: RoundedRectangle(cornerRadius: 8))
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(plugin.title).font(.subheadline.weight(.semibold))
+                        Text(plugin.subtitle).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                    }
+
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(.secondary)
+                        .rotationEffect(.degrees(expandedPlugin == plugin ? 90 : 0))
+
+                    Spacer(minLength: 12)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(expandedPlugin == plugin
+                  ? L10n.text("收起关键词", "Collapse")
+                  : L10n.text("展开关键词", "Expand"))
+
+            Toggle(
+                L10n.text("启用", "Enable"),
+                isOn: Binding(
+                    get: { plugins.isEnabled(plugin) },
+                    set: { plugins.setEnabled($0, for: plugin) }
+                )
+            )
+            .toggleStyle(LumaToggleStyle())
+        }
+    }
+
+    private func keywordEditor(_ plugin: Plugin) -> some View {
+        let configuration = plugins.configuration(for: plugin)
+        return VStack(alignment: .leading, spacing: 8) {
             Text(L10n.text("关键词", "Keywords"))
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
@@ -1050,11 +1107,11 @@ struct SettingsView: View {
                 .buttonStyle(LumaTextButtonStyle(height: 28))
             }
         }
-        .padding(.leading, 2)
     }
 }
 
-private extension View {
+extension View {
+    /// 设置页统一的分组容器：左右留白 + 底部发丝线。所有设置分区共用同一种节奏。
     func settingsCard() -> some View {
         padding(.horizontal, 4)
             .padding(.vertical, 16)
