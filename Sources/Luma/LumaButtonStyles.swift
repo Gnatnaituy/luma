@@ -189,6 +189,11 @@ struct LumaFlowLayout: Layout {
     }
 }
 
+/// 下拉选择控件：值文本左对齐、箭头贴右边缘，外观与 `LumaTextFieldStyle` 对齐
+/// （同高、同圆角、同左内边距），因此可以和输入框放在同一列里。
+///
+/// 不能用 `.menuStyle(.borderlessButton)`：那种样式交给 AppKit 的菜单按钮绘制，
+/// 会把标签内容整体居中，短值飘在控件中间，箭头也会跑到文字左侧。
 struct LumaMenuPicker<Value: Hashable>: View {
     @Binding var selection: Value
     let values: [Value]
@@ -218,26 +223,35 @@ struct LumaMenuPicker<Value: Hashable>: View {
             HStack(spacing: 8) {
                 Text(selectedTitle)
                     .lineLimit(1)
-                Spacer(minLength: 8)
+                    .truncationMode(.middle)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 Image(systemName: "chevron.up.chevron.down")
                     .font(.system(size: 9, weight: .bold))
                     .foregroundStyle(.secondary)
             }
             .font(.system(size: 13, weight: .semibold))
             .foregroundStyle(.primary)
-            .padding(.horizontal, 10)
-            .frame(maxWidth: .infinity, minHeight: 30)
+            .padding(.leading, 16)
+            .padding(.trailing, 10)
+            .frame(minHeight: 32)
+            .contentShape(RoundedRectangle(cornerRadius: LumaRadius.control, style: .continuous))
         }
-        .menuStyle(.borderlessButton)
+        .menuStyle(.button)
+        .buttonStyle(LumaPopUpButtonStyle())
         .menuIndicator(.hidden)
-        .padding(.leading, 6)
         .frame(maxWidth: .infinity)
-        .frame(height: 30)
-        .background(
-            LumaTone.controlFill,
-            in: RoundedRectangle(cornerRadius: 7, style: .continuous)
-        )
-        .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+    }
+}
+
+/// 下拉框的按下反馈，与 `LumaIconButtonStyle` / `LumaTextButtonStyle` 同一套填充色。
+private struct LumaPopUpButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .background(
+                configuration.isPressed ? LumaTone.controlFillPressed : LumaTone.controlFill,
+                in: RoundedRectangle(cornerRadius: LumaRadius.control, style: .continuous)
+            )
+            .animation(LumaMotion.press, value: configuration.isPressed)
     }
 }
 
