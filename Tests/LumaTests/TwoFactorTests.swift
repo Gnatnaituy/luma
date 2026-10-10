@@ -533,6 +533,52 @@ struct TwoFactorTests {
         try expect(summary.failed == 1 && summary.isProblem, "the summary reports the failure")
     }
 
+    // MARK: - 验证码显示与隐藏
+
+    @Test
+    func codeMasking() throws {
+        try expect(TOTPGenerator.masked("123456") == "••• •••", "six digits keep the group spacing")
+        try expect(TOTPGenerator.masked("12345678") == "•••• ••••", "eight digits keep the group spacing")
+        try expect(TOTPGenerator.masked("1234567") == "••• ••••", "odd lengths mask in place")
+        try expect(TOTPGenerator.masked("") == "", "an empty code stays empty")
+
+        try expect(TOTPGenerator.display("123456", hidden: false) == "123 456", "visible mode groups the digits")
+        try expect(TOTPGenerator.display("123456", hidden: true) == "••• •••", "hidden mode prints placeholders")
+        try expect(
+            TOTPGenerator.display("123456", hidden: true).count == TOTPGenerator.display("123456", hidden: false).count,
+            "the placeholder keeps the same width so rows do not jump"
+        )
+    }
+
+    @Test
+    @MainActor
+    func codeVisibilityPreferencePersists() throws {
+        let suiteName = "app.luma.twofactor-tests." + UUID().uuidString
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defaults.removePersistentDomain(forName: suiteName)
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let store = TwoFactorStore(defaults: defaults, secrets: InMemoryTwoFactorSecretStore())
+        try expect(store.hidesCodes == false, "codes are visible by default")
+
+        store.hidesCodes = true
+        try expect(defaults.bool(forKey: "luma.twofactor.hides-codes.v1"), "hiding writes the preference")
+        try expect(
+            TwoFactorStore(defaults: defaults, secrets: InMemoryTwoFactorSecretStore()).hidesCodes,
+            "the choice survives a relaunch"
+        )
+
+        store.hidesCodes = false
+        try expect(
+            TwoFactorStore(defaults: defaults, secrets: InMemoryTwoFactorSecretStore()).hidesCodes == false,
+            "showing again is remembered too"
+        )
+        try expect(
+            SettingsBackup.supportedKeys.contains("luma.twofactor.hides-codes.v1"),
+            "the preference is part of the exported configuration"
+        )
+    }
+
     // MARK: - 辅助
 
     private func expect(_ condition: @autoclosure () throws -> Bool, _ name: String) throws {

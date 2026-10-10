@@ -732,6 +732,30 @@ struct SettingsView: View {
 
             HStack(alignment: .center, spacing: 24) {
                 VStack(alignment: .leading, spacing: 5) {
+                    Text(L10n.text("隐藏验证码", "Hide Codes"))
+                        .font(.headline)
+                    Text(L10n.text(
+                        "只显示占位符，适合投屏或旁边有人时使用；复制验证码仍然可用。插件的眼睛按钮与 ⌘H 也能随时切换，状态会保留。",
+                        "Show placeholders instead of digits — useful when sharing your screen. Copying still works. The eye button in the plugin and ⌘H toggle the same switch, and the choice is remembered."
+                    ))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Toggle(
+                    L10n.text("启用", "Enable"),
+                    isOn: Binding(
+                        get: { twoFactor.hidesCodes },
+                        set: { twoFactor.hidesCodes = $0 }
+                    )
+                )
+                .toggleStyle(LumaToggleStyle())
+            }
+
+            Divider()
+
+            HStack(alignment: .center, spacing: 24) {
+                VStack(alignment: .leading, spacing: 5) {
                     Text(L10n.text("即将失效时提醒", "Highlight Expiring Codes"))
                         .font(.headline)
                     Text(L10n.text(

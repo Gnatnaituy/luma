@@ -134,6 +134,16 @@ enum TOTPGenerator {
         let middle = code.index(code.startIndex, offsetBy: code.count / 2)
         return "\(code[code.startIndex..<middle]) \(code[middle...])"
     }
+
+    /// 隐藏状态下的占位符：保留分组空格，宽度与真实验证码一致，切换时不跳动。
+    static func masked(_ code: String) -> String {
+        String(grouped(code).map { $0.isNumber ? "•" : $0 })
+    }
+
+    /// 按当前显示模式输出验证码。
+    static func display(_ code: String, hidden: Bool) -> String {
+        hidden ? masked(code) : grouped(code)
+    }
 }
 
 // MARK: - otpauth 链接
@@ -560,12 +570,17 @@ final class TwoFactorStore: ObservableObject {
     @Published var highlightsExpiringCodes: Bool {
         didSet { defaults.set(highlightsExpiringCodes, forKey: highlightKey) }
     }
+    /// 只显示占位符、不显示验证码数字。复制仍然可用，所以「取码即走」不受影响。
+    @Published var hidesCodes: Bool {
+        didSet { defaults.set(hidesCodes, forKey: hidesCodesKey) }
+    }
 
     private let defaults: UserDefaults
     private let secrets: TwoFactorSecretStoring
     private let accountsKey = "luma.twofactor.accounts.v1"
     private let autoDismissKey = "luma.twofactor.auto-dismiss.v1"
     private let highlightKey = "luma.twofactor.highlight-expiring.v1"
+    private let hidesCodesKey = "luma.twofactor.hides-codes.v1"
 
     private var secretCache: [UUID: String] = [:]
     private var codeCache: [UUID: CachedCode] = [:]
@@ -590,6 +605,8 @@ final class TwoFactorStore: ObservableObject {
         }
         autoDismissesAfterCopy = defaults.object(forKey: autoDismissKey) as? Bool ?? true
         highlightsExpiringCodes = defaults.object(forKey: highlightKey) as? Bool ?? true
+        // 默认显示：隐藏是显式选择，选过一次之后就一直保持。
+        hidesCodes = defaults.object(forKey: hidesCodesKey) as? Bool ?? false
     }
 
     var isEmpty: Bool { accounts.isEmpty }

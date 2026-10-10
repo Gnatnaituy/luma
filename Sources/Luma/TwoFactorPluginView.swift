@@ -82,6 +82,7 @@ struct TwoFactorPluginView: View {
                     seed: seed,
                     store: store,
                     now: now,
+                    hidesCodes: store.hidesCodes,
                     onCancel: { page = .list },
                     onFinish: { message in
                         page = .list
@@ -146,6 +147,26 @@ struct TwoFactorPluginView: View {
                 Label(L10n.text("添加", "Add"), systemImage: "plus")
             }
             .buttonStyle(LumaTextButtonStyle(height: 28))
+
+            Button {
+                toggleCodeVisibility()
+            } label: {
+                Label {
+                    Text(store.hidesCodes
+                        ? L10n.text("显示验证码", "Show Codes")
+                        : L10n.text("隐藏验证码", "Hide Codes"))
+                } icon: {
+                    Image(systemName: store.hidesCodes ? "eye.slash" : "eye")
+                }
+            }
+            .buttonStyle(LumaTextButtonStyle(height: 28))
+            .help(L10n.text(
+                "隐藏后只显示占位符，复制快捷键仍然可用（⌘H）",
+                "Show placeholders instead of digits. Copying still works (⌘H)"
+            ))
+            .accessibilityLabel(store.hidesCodes
+                ? L10n.text("显示验证码", "Show codes")
+                : L10n.text("隐藏验证码", "Hide codes"))
 
             Spacer()
 
@@ -231,6 +252,7 @@ struct TwoFactorPluginView: View {
                         highlightsExpiring: store.highlightsExpiringCodes,
                         isConfirmingDeletion: pendingDeletion == account.id,
                         isKeychainUnavailable: store.secretsUnavailable,
+                        hidesCode: store.hidesCodes,
                         onCopy: { copy(account) },
                         onEdit: {
                             page = .editor(.edit(account, secret: store.secret(for: account) ?? ""))
@@ -298,6 +320,10 @@ struct TwoFactorPluginView: View {
         page = .editor(.review(TwoFactorImporter.importFromClipboardImage(image)))
     }
 
+    private func toggleCodeVisibility() {
+        store.hidesCodes.toggle()
+    }
+
     private func showBanner(_ message: String) {
         bannerToken += 1
         let token = bannerToken
@@ -340,8 +366,13 @@ struct TwoFactorPluginView: View {
     private func installKeyboardMonitor() {
         guard keyboardMonitor == nil else { return }
         keyboardMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-            guard case .list = page else { return event }
             let commandModifiers: NSEvent.ModifierFlags = [.command, .control, .option, .shift]
+            // ⌘H 在两个页面都能切换：列表里藏起验证码，编辑页里藏起预览。
+            if event.keyCode == 4, event.modifierFlags.intersection(commandModifiers) == [.command] {
+                toggleCodeVisibility()
+                return nil
+            }
+            guard case .list = page else { return event }
             guard event.modifierFlags.intersection(commandModifiers).isEmpty else { return event }
             switch event.keyCode {
             case 125: moveSelection(1)
@@ -370,6 +401,7 @@ private struct TwoFactorAccountRow: View {
     let highlightsExpiring: Bool
     let isConfirmingDeletion: Bool
     let isKeychainUnavailable: Bool
+    let hidesCode: Bool
     let onCopy: () -> Void
     let onEdit: () -> Void
     let onRequestDelete: () -> Void
@@ -451,7 +483,7 @@ private struct TwoFactorAccountRow: View {
     @ViewBuilder
     private var codeText: some View {
         if let code {
-            Text(TOTPGenerator.grouped(code))
+            Text(TOTPGenerator.display(code, hidden: hidesCode))
                 .font(.system(size: 21, weight: .semibold, design: .monospaced))
                 .monospacedDigit()
                 .foregroundStyle(isExpiring ? Color.red : Color.primary)
@@ -531,6 +563,7 @@ private struct TwoFactorAccountRow: View {
 private struct TwoFactorEditorView: View {
     let store: TwoFactorStore
     let now: Date
+    let hidesCodes: Bool
     let onCancel: () -> Void
     let onFinish: (String?) -> Void
 
@@ -552,11 +585,13 @@ private struct TwoFactorEditorView: View {
         seed: TwoFactorEditorSeed,
         store: TwoFactorStore,
         now: Date,
+        hidesCodes: Bool,
         onCancel: @escaping () -> Void,
         onFinish: @escaping (String?) -> Void
     ) {
         self.store = store
         self.now = now
+        self.hidesCodes = hidesCodes
         self.onCancel = onCancel
         self.onFinish = onFinish
         _target = State(initialValue: seed.target)
@@ -931,13 +966,16 @@ private struct TwoFactorEditorView: View {
                             .foregroundStyle(.secondary)
                     }
                     Spacer()
-                    Text(TOTPGenerator.grouped(TOTPGenerator.code(
-                        secret: key,
-                        algorithm: draft.algorithm,
-                        digits: draft.digits,
-                        period: draft.period,
-                        at: now
-                    )))
+                    Text(TOTPGenerator.display(
+                        TOTPGenerator.code(
+                            secret: key,
+                            algorithm: draft.algorithm,
+                            digits: draft.digits,
+                            period: draft.period,
+                            at: now
+                        ),
+                        hidden: hidesCodes
+                    ))
                         .font(.system(size: 20, weight: .semibold, design: .monospaced))
                         .monospacedDigit()
                         .foregroundStyle(.secondary)

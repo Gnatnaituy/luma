@@ -110,6 +110,7 @@ enum SettingsBackup {
         "luma.weather.locations.v1", "luma.weather.data-source.v1",
         "luma.clipboard.retention.v1", "luma.clipboard.storage-limit.v1",
         "luma.twofactor.accounts.v1", "luma.twofactor.auto-dismiss.v1", "luma.twofactor.highlight-expiring.v1",
+        "luma.twofactor.hides-codes.v1",
         "luma.ai.providers.v1", "luma.ai.selected-provider.v1",
         "luma.translation.backend.v1", "luma.translation.provider.v1", "luma.translation.model.v1"
     ]
