@@ -22,8 +22,8 @@ struct LauncherWindowPlacement {
         }
     }
 
-    // Captured from the user's chosen position on a 1920 x 1255 visible frame.
-    private static let defaultHorizontalRatio: CGFloat = 567.0 / 1920.0
+    // 首次出现（本次运行内用户还没挪过窗口）时的默认位置：横向严格居中，纵向沿用
+    // 用户在 1920 x 1255 可视区域上选定的高度比例。
     private static let defaultTopRatio: CGFloat = 1034.0 / 1255.0
 
     private var rememberedTopLeftOffsets: [ScreenKey: NSPoint] = [:]
@@ -53,7 +53,7 @@ struct LauncherWindowPlacement {
             visibleFrame.height
         )
         let proposedDefaultTopLeft = NSPoint(
-            x: visibleFrame.minX + visibleFrame.width * Self.defaultHorizontalRatio,
+            x: visibleFrame.minX + (visibleFrame.width - width) / 2,
             y: visibleFrame.minY + visibleFrame.height * Self.defaultTopRatio
         )
         let rememberedOffset = rememberedTopLeftOffsets[ScreenKey(visibleFrame)]

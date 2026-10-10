@@ -1353,9 +1353,9 @@ struct CoreTests {
             visibleFrame: capturedScreenVisibleFrame
         )
         try expect(
-            abs(capturedDefaultFrame.minX - 567) < 1
+            abs(capturedDefaultFrame.midX - capturedScreenVisibleFrame.midX) < 1
                 && abs(capturedDefaultFrame.maxY - 1034) < 1,
-            "launcher defaults to the user-selected current position"
+            "launcher defaults to a horizontally centered position at the captured top edge"
         )
         let defaultWindowFrame = windowPlacement.frame(
             width: 920,
@@ -1364,8 +1364,10 @@ struct CoreTests {
             visibleFrame: visibleFrame
         )
         try expect(
-            visibleFrame.contains(defaultWindowFrame) && defaultWindowFrame.maxY > visibleFrame.midY,
-            "responsive default launcher position stays visible and above center"
+            visibleFrame.contains(defaultWindowFrame)
+                && abs(defaultWindowFrame.midX - visibleFrame.midX) < 1
+                && defaultWindowFrame.maxY > visibleFrame.midY,
+            "responsive default launcher position is centered and above center"
         )
 
         let controlPanel = NSPanel(
@@ -1408,8 +1410,9 @@ struct CoreTests {
         )
         try expect(
             secondaryVisibleFrame.contains(secondaryDefaultFrame)
+                && abs(secondaryDefaultFrame.midX - secondaryVisibleFrame.midX) < 1
                 && secondaryDefaultFrame.minX != draggedFrame.minX,
-            "each display starts from its own responsive default position"
+            "each display starts from its own centered default position"
         )
         let secondaryDraggedFrame = NSRect(x: 1650, y: 380, width: 920, height: 600)
         windowPlacement.remember(
