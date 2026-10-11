@@ -94,6 +94,123 @@ struct CoreTests {
             "SHA-256"
         )
 
+        // 编码小助手：哈希、十六进制、Unicode 转义、命名转换、行处理与时间戳。
+        try expect(
+            CodeTool.sha512("abc") == "ddaf35a193617abacc417349ae20413112e6fa4e89a97ea20a9eeee64b55d39a"
+                + "2192992a274fc1a836ba3c23a3feebbd454d4423643ce80e2a9ac94fa54ca49f",
+            "SHA-512"
+        )
+        try expect(CodeTool.sha1("abc") == "a9993e364706816aba3e25717850c26c9cd0d89d", "SHA-1")
+        try expect(CodeTool.md5("abc") == "900150983cd24fb0d6963f7d28e17f72", "MD5")
+
+        try expect(CodeTool.hexEncode("Luma") == "4c756d61", "hex encoding")
+        try expect(try CodeTool.hexDecode("4c756d61") == "Luma", "hex round trip")
+        try expect(try CodeTool.hexDecode("4C 75 6D 61") == "Luma", "hex decoding ignores separators")
+        try expect(try CodeTool.hexDecode("0x4c756d61") == "Luma", "hex decoding accepts a 0x prefix")
+        do {
+            _ = try CodeTool.hexDecode("4c756d6")
+            throw TestFailure("odd length hex must fail")
+        } catch is CodeToolboxError {}
+        do {
+            _ = try CodeTool.hexDecode("zz")
+            throw TestFailure("non hex characters must fail")
+        } catch is CodeToolboxError {}
+
+        try expect(CodeTool.unicodeEscape("中") == "\\u4E2D", "unicode escape")
+        try expect(CodeTool.unicodeEscape("A中") == "A\\u4E2D", "unicode escape keeps ASCII")
+        try expect(
+            CodeTool.unicodeEscape("😀") == "\\uD83D\\uDE00",
+            "unicode escape writes surrogate pairs for the supplementary plane"
+        )
+        try expect(try CodeTool.unicodeUnescape("\\u4E2D") == "中", "unicode unescape")
+        try expect(
+            try CodeTool.unicodeUnescape("\\uD83D\\uDE00") == "😀",
+            "unicode unescape joins surrogate pairs"
+        )
+        try expect(
+            try CodeTool.unicodeUnescape(CodeTool.unicodeEscape("Luma 原生 😀")) == "Luma 原生 😀",
+            "unicode escape round trip"
+        )
+        do {
+            _ = try CodeTool.unicodeUnescape("no escapes here")
+            throw TestFailure("text without escapes must fail")
+        } catch is CodeToolboxError {}
+
+        try expect(CodeTool.camelCase("user_profile_id") == "userProfileId", "camelCase from snake_case")
+        try expect(CodeTool.camelCase("HTTP server") == "httpServer", "camelCase keeps acronyms whole")
+        try expect(CodeTool.pascalCase("kebab-case-name") == "KebabCaseName", "PascalCase from kebab-case")
+        try expect(CodeTool.snakeCase("myURLValue") == "my_url_value", "snake_case splits acronyms")
+        try expect(CodeTool.kebabCase("MyURLValue") == "my-url-value", "kebab-case")
+        try expect(CodeTool.constantCase("my url value") == "MY_URL_VALUE", "CONSTANT_CASE")
+
+        try expect(CodeTool.sortedLines("b\na\nc") == "a\nb\nc", "sort lines")
+        try expect(CodeTool.sortedLines("b\na\n") == "a\nb\n", "sort lines keeps the trailing newline")
+        try expect(CodeTool.dedupedLines("a\nb\na\nc\nb") == "a\nb\nc", "dedupe lines keeps first order")
+        try expect(CodeTool.reversedLines("a\nb\nc") == "c\nb\na", "reverse lines")
+        try expect(CodeTool.linesWithoutBlanks("a\n\n  \nb") == "a\nb", "remove blank lines")
+        try expect(CodeTool.sortedLines("") == "", "empty input stays empty")
+
+        try expect(try CodeTool.timestampToDate("0").hasPrefix("1970-01-01T"), "timestamp to date")
+        try expect(
+            try CodeTool.timestampToDate("1714559696000") == CodeTool.timestampToDate("1714559696"),
+            "13 digit timestamps are treated as milliseconds"
+        )
+        try expect(try CodeTool.dateToTimestamp("1970-01-01T00:00:00Z") == "0", "ISO 8601 to timestamp")
+        let localMidnight = Calendar.current.date(from: DateComponents(year: 2024, month: 5, day: 1))!
+        try expect(
+            try CodeTool.dateToTimestamp("2024-05-01") == String(Int(localMidnight.timeIntervalSince1970)),
+            "plain dates are read in the local time zone"
+        )
+        do {
+            _ = try CodeTool.timestampToDate("not a number")
+            throw TestFailure("non numeric timestamps must fail")
+        } catch is CodeToolboxError {}
+        do {
+            _ = try CodeTool.dateToTimestamp("someday")
+            throw TestFailure("unrecognized dates must fail")
+        } catch is CodeToolboxError {}
+
+        // 工具目录自身的一致性：分类不重不漏，每个工具都能显示。
+        try expect(
+            CodeToolboxTool.allCases.count == Set(CodeToolboxTool.allCases.map(\.rawValue)).count,
+            "tool identifiers are unique"
+        )
+        try expect(
+            Set(CodeToolboxCategory.allCases.flatMap(\.tools)) == Set(CodeToolboxTool.allCases)
+                && CodeToolboxCategory.allCases.flatMap(\.tools).count == CodeToolboxTool.allCases.count,
+            "every tool appears in exactly one category"
+        )
+        try expect(
+            CodeToolboxTool.allCases.allSatisfy { !$0.title.isEmpty },
+            "every tool has a title"
+        )
+
+        // 合并 JSON 编辑器后，JSON 相关工具走的是同一套 JSONTool。
+        try expect(
+            try CodeToolboxTool.jsonFormat.apply(to: "{\"b\":1,\"a\":[true,null]}")
+                == "{\n  \"a\" : [\n    true,\n    null\n  ],\n  \"b\" : 1\n}",
+            "JSON format tool pretty prints and sorts keys"
+        )
+        try expect(
+            try CodeToolboxTool.jsonMinify.apply(to: "{\n  \"a\" : 1\n}") == "{\"a\":1}",
+            "JSON minify tool removes whitespace"
+        )
+        try expect(
+            try CodeToolboxTool.jsonEscape.apply(to: "a\"b") == "a\\\"b",
+            "JSON escape tool"
+        )
+        var invalidJSONFailed = false
+        do {
+            _ = try CodeToolboxTool.jsonFormat.apply(to: "{not json}")
+        } catch {
+            invalidJSONFailed = true
+        }
+        try expect(invalidJSONFailed, "invalid JSON must fail")
+        try expect(
+            UUID(uuidString: try CodeToolboxTool.uuid.apply(to: "ignored")) != nil,
+            "UUID tool ignores the input and produces a valid identifier"
+        )
+
         let password = PasswordTool.generate(length: 32, uppercase: true, digits: true, symbols: true)
         try expect(password.count == 32, "password length")
         try expect(password.allSatisfy { !$0.isWhitespace }, "password alphabet")
@@ -1043,16 +1160,16 @@ struct CoreTests {
         navigationModel.query = "json"
         try expect(navigationModel.presentation == .results && navigationModel.preferredWindowHeight == 430, "launcher expands for results")
         navigationModel.activateSelected()
-        try expect(navigationModel.presentation == .plugin && navigationModel.selectedPlugin == .json, "search opens a single tool")
+        try expect(navigationModel.presentation == .plugin && navigationModel.selectedPlugin == .code, "search opens a single tool")
         try expect(
             navigationModel.preferredWindowHeight == LauncherModel.defaultExpandedWindowHeight
                 && LauncherModel.defaultExpandedWindowHeight == 666,
             "plugin and settings pages use the captured default panel height"
         )
-        try expect(recentUsage.items.first?.plugin == .json, "opening a plugin records it as recently used")
+        try expect(recentUsage.items.first?.plugin == .code, "opening a plugin records it as recently used")
         navigationModel.returnToSearch()
         try expect(
-            navigationModel.recentItems.first?.plugin == .json
+            navigationModel.recentItems.first?.plugin == .code
                 && navigationModel.recentTileItems.count == 1
                 && navigationModel.preferredWindowHeight
                     == LauncherModel.recentPanelHeight(sections: navigationModel.recentSections),
@@ -1264,7 +1381,7 @@ struct CoreTests {
             doCommandBy: #selector(NSResponder.insertNewline(_:))
         )
         try expect(
-            navigationModel.presentation == .plugin && navigationModel.selectedPlugin == .json,
+            navigationModel.presentation == .plugin && navigationModel.selectedPlugin == .code,
             "Enter explicitly opens the selected result"
         )
         navigationModel.prepareForPresentation(query: "翻译")
@@ -1273,25 +1390,25 @@ struct CoreTests {
             "keyword shortcut directly opens its only matching plugin"
         )
 
-        pluginSettings.setEnabled(false, for: .json)
+        pluginSettings.setEnabled(false, for: .code)
         navigationModel.query = "json"
-        try expect(!navigationModel.filteredPlugins.contains(.json), "disabled plugin is removed from search results")
-        pluginSettings.setEnabled(true, for: .json)
-        pluginSettings.updateKeyword(for: .json, at: 0, value: "amberotter")
+        try expect(!navigationModel.filteredPlugins.contains(.code), "disabled plugin is removed from search results")
+        pluginSettings.setEnabled(true, for: .code)
+        pluginSettings.updateKeyword(for: .code, at: 0, value: "amberotter")
         navigationModel.query = "amberotter"
-        try expect(navigationModel.filteredPlugins == [.json], "modified default plugin keyword participates in search")
-        let customKeywordIndex = pluginSettings.addKeyword(to: .json)
-        pluginSettings.updateKeyword(for: .json, at: customKeywordIndex, value: "rainbowfish")
+        try expect(navigationModel.filteredPlugins == [.code], "modified default plugin keyword participates in search")
+        let customKeywordIndex = pluginSettings.addKeyword(to: .code)
+        pluginSettings.updateKeyword(for: .code, at: customKeywordIndex, value: "rainbowfish")
         navigationModel.query = "rainbowfish"
-        try expect(navigationModel.filteredPlugins == [.json], "new plugin keyword participates in search")
-        pluginSettings.updateKeyword(for: .json, at: customKeywordIndex, value: "structuredfish")
+        try expect(navigationModel.filteredPlugins == [.code], "new plugin keyword participates in search")
+        pluginSettings.updateKeyword(for: .code, at: customKeywordIndex, value: "structuredfish")
         navigationModel.query = "structuredfish"
-        try expect(navigationModel.filteredPlugins == [.json], "modified plugin keyword participates in search")
+        try expect(navigationModel.filteredPlugins == [.code], "modified plugin keyword participates in search")
         let restoredPluginSettings = PluginSettings(defaults: pluginDefaults)
         try expect(
-            restoredPluginSettings.isEnabled(.json)
-                && restoredPluginSettings.keywords(for: .json).first == "amberotter"
-                && restoredPluginSettings.keywords(for: .json).last == "structuredfish",
+            restoredPluginSettings.isEnabled(.code)
+                && restoredPluginSettings.keywords(for: .code).first == "amberotter"
+                && restoredPluginSettings.keywords(for: .code).last == "structuredfish",
             "plugin enabled state and keyword edits persist"
         )
 
@@ -1339,7 +1456,7 @@ struct CoreTests {
         let restoredRecentUsage = RecentUsageStore(defaults: recentDefaults)
         try expect(
             restoredRecentUsage.items.first?.application?.name == "Terminal"
-                && restoredRecentUsage.items.contains(where: { $0.plugin == .json }),
+                && restoredRecentUsage.items.contains(where: { $0.plugin == .code }),
             "recent plugins and apps persist locally"
         )
 
@@ -1450,11 +1567,11 @@ struct CoreTests {
             "focused application window resolves to the display with the largest overlap"
         )
         let userResizedFrame = NSRect(x: 86, y: 300, width: 920, height: 420)
-        windowPlacement.rememberHeight(userResizedFrame.height, for: .plugin(Plugin.json.rawValue))
+        windowPlacement.rememberHeight(userResizedFrame.height, for: .plugin(Plugin.code.rawValue))
         let reopenedAtRememberedHeight = windowPlacement.frame(
             width: 920,
             height: 58,
-            heightContext: .plugin(Plugin.json.rawValue),
+            heightContext: .plugin(Plugin.code.rawValue),
             visibleFrame: visibleFrame
         )
         try expect(

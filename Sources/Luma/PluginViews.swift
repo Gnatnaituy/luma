@@ -22,7 +22,6 @@ struct PluginDetailView: View {
         switch plugin {
         case .clipboard: ClipboardPluginView(clipboard: clipboard, onPaste: pasteClipboardEntry)
         case .calculator: CalculatorPluginView()
-        case .json: JSONPluginView(clipboard: clipboard)
         case .password: PasswordPluginView(clipboard: clipboard)
         case .twoFactor: TwoFactorPluginView(store: twoFactor, clipboard: clipboard, dismiss: dismiss)
         case .translate: TranslationPluginView(clipboard: clipboard, settings: translationSettings, preferredInput: selectedText)
