@@ -401,7 +401,9 @@ struct ClipboardEntryRow: View {
                         HStack(spacing: 6) {
                             Label(entry.kind.title, systemImage: entry.kind.symbol)
                             Text("·")
-                            Text(entry.copiedAt.formatted(.dateTime.year().month().day().hour().minute()))
+                            // 用 Text 的 format 重载而不是 `Date.formatted()`：后者固定按系统
+                            // locale 排版，中文界面下会显示成英文日期。
+                            Text(entry.copiedAt, format: .dateTime.year().month().day().hour().minute())
                         }
                         .font(.caption2)
                         .foregroundStyle(.secondary)

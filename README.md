@@ -8,64 +8,45 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/macOS-14.4%2B-000000?logo=apple&amp;logoColor=white" alt="macOS 14.4+">
-  <img src="https://img.shields.io/badge/Apple%20Silicon-arm64-333333?logo=apple&amp;logoColor=white" alt="Apple Silicon">
+  <img src="https://img.shields.io/badge/Universal-arm64%20%7C%20x86__64-333333?logo=apple&amp;logoColor=white" alt="Universal">
   <img src="https://img.shields.io/badge/Swift-6.0%2B-F05138?logo=swift&amp;logoColor=white" alt="Swift 6.0+">
 </p>
 
 <p align="center">
-  <a href="#快速开始">快速开始</a> ·
-  <a href="#核心体验">核心体验</a> ·
-  <a href="#内置插件">内置插件</a> ·
-  <a href="#权限隐私与本地数据">隐私与数据</a> ·
+  <a href="#安装">安装</a> ·
+  <a href="#内置插件">插件</a> ·
+  <a href="#基本操作">操作</a> ·
+  <a href="#隐私与本地数据">隐私</a> ·
   <a href="#开发">开发</a>
 </p>
 
-Luma 使用 Swift、SwiftUI、AppKit 与 macOS 系统框架构建，把 App、Spotlight 文件、算式和常用工具聚合到同一个浮动面板中。
+按 `⌥Space` 唤起一个浮动面板，搜 App、搜文件、算数、翻剪贴板历史、取验证码都在同一个输入框里完成。纯 Swift + SwiftUI + AppKit，没有 Electron、WebView 或 JavaScript 运行时。
 
-项目不包含 Electron、Chromium、WebView 或 JavaScript 运行时，专注于低干扰、低资源占用和键盘优先的原生体验。
+![Luma 首页](docs/screenshots/home.png)
 
-## 快速开始
+## 安装
 
-### 环境要求
+从 [Releases](https://github.com/Gnatnaituy/luma/releases/latest) 下载 DMG，把 **Luma.app** 拖进「应用程序」。
 
-- macOS 14.4 或更高版本
-- Apple Silicon Mac
-- Swift 6.0 或更高版本（Xcode 16 或 Command Line Tools 16）
+首次打开会被 macOS 拦下，提示「无法验证开发者」或「已损坏」。应用使用 ad-hoc 签名、未经 Apple 公证，这是预期行为，不是文件损坏。任选一种方式放行：
+
+- 在「应用程序」里右键点击 Luma → 选择「打开」→ 在弹窗里再点「打开」；
+- 或打开「终端」执行 `xattr -dr com.apple.quarantine /Applications/Luma.app`。
+
+Luma 常驻菜单栏，默认快捷键 `⌥Space`，退出入口在菜单栏图标里。首次使用粘贴、读取选中文本或窗口管理前，需要在「系统设置 → 隐私与安全性 → 辅助功能」中启用它。
 
 ### 从源码安装
 
 ```bash
 git clone https://github.com/Gnatnaituy/luma.git
 cd luma
-./scripts/install-app.sh
+./scripts/install-app.sh      # 构建、签名并替换 /Applications/Luma.app
+./scripts/build-dmg.sh        # 打出可分发的通用二进制 DMG
 ```
 
-安装脚本会完成 Release 构建与代码签名，验证暂存副本、备份旧版本并替换 `/Applications/Luma.app`，然后启动新版本。新副本移动失败时会恢复备份。
+需要 macOS 14.4 或更高版本，以及 Swift 6.0+（Xcode 16 或 Command Line Tools 16）。
 
-构建脚本优先使用当前默认 SDK。若机器上只有 Command Line Tools（没装 Xcode），当前 SDK 的 SwiftUI 把这些属性做成了宏，展开需要 Xcode 才提供的宏插件；脚本会自动改用仍以属性包装器实现它们的已安装 SDK（见 `scripts/select-sdk.sh`），`scripts/test-core.sh` 用同样的方式让 `swift test` 可用。装上 Xcode 后这一步自动跳过。
-
-安装完成后，按 `⌥ Space` 唤起或隐藏 Luma。首次使用粘贴、读取选中文本或窗口管理前，请在“系统设置 → 隐私与安全性 → 辅助功能”中启用 Luma。
-
-> 当前安装包由本机源码构建并使用 ad-hoc 签名，不是 Developer ID 签名或 Apple 公证的发行包。
-
-## 核心体验
-
-- **统一搜索**：同时查找插件、已安装的 macOS App、Spotlight 文件和算式结果。
-- **键盘优先**：使用方向键、`Enter`、`Esc` 和右方向键完成选择、执行、返回与结果操作。
-- **随焦点出现**：面板显示在当前聚焦屏幕，并在本次运行期间记住位置和页面高度。
-- **按需直达**：可为关键词绑定独立全局快捷键；唯一命中时直接进入对应插件。
-- **原生双语**：设置页支持中文与 English 即时切换，并保留语言选择。
-- **最近使用网格**：首页把最近打开的插件与 App 排成一行行圆角方形图标，鼠标点击或键盘选择后回车即可打开。
-- **大标题搜索框**：首页顶部的大标题兼作搜索框，其他页面显示搜索提示。
-- **可配置排列**：首页可平铺混排，或按插件与 App 分组展示，两组之间以一根发丝分隔线区分。
-
-Luma 启动后会低优先级扫描标准 Applications 目录，为本机 App 建立轻量索引。文件搜索复用 macOS Spotlight，不维护另一份文件数据库。
-
-搜索结果统一支持打开或复制；App 和文件还可复制路径并在 Finder 中显示。按右方向键可展开操作栏，鼠标右键可打开当前结果的上下文菜单。
-
-首页网格支持方向键移动选择、`Enter` 打开当前项。面板使用系统 Liquid Glass 材质，因此外观随桌面与深浅色模式一起变化。
-
-界面基线集中在 `Sources/Luma/LumaTheme.swift`：面板、卡片、控件与图标的圆角、材质层级、发丝分隔线以及首页网格的度量都在这里定义，网格高度由 `LauncherModel.recentPanelHeight` 依据同一组常量计算。
+只有 Command Line Tools 时，当前 SDK 的 SwiftUI 把 `@State` 这类属性做成了宏，展开需要 Xcode 才提供的宏插件；构建与测试脚本会自动改用仍以属性包装器实现它们的已安装 SDK（见 `scripts/select-sdk.sh`），装上 Xcode 后这一步自动跳过。
 
 ## 内置插件
 
@@ -82,33 +63,17 @@ Luma 启动后会低优先级扫描标准 Applications 目录，为本机 App �
 | 日历 | 查看公历、农历、节气、传统节日和内置年份的节假日安排 |
 | 窗口管理 | 将当前窗口排列到左半屏、右半屏、最大化或居中 |
 
-### 剪贴板
+编码小助手把 28 个工具按 JSON / 编码 / 哈希 / 命名 / 生成 / 文本分页，输入与输出都带 JSON 语法高亮，结果可以一键「交换」回输入做连续处理：
 
-剪贴板历史支持文本、图片、文件和链接。双击条目或按 `Enter` 会隐藏 Luma、恢复原窗口并粘贴；收藏、复制、删除和图片预览也可直接完成。
+![编码小助手](docs/screenshots/toolbox.png)
 
-文本与链接全局去重，文件避免连续重复，图片按内容哈希去重。默认保留 3 个月，可改为 3 天、7 天、1 个月、3 个月、6 个月或 1 年；收藏不受自动过期限制。
+剪贴板历史支持文本、图片、文件和链接；双击或 `Enter` 会隐藏 Luma、恢复原窗口并粘贴。文本与链接全局去重，图片按内容哈希去重，默认保留 3 个月（收藏不受限）。两步验证支持 SHA-1 / SHA-256 / SHA-512 与自定义周期，二维码截图由系统 Vision 在本机解析，密钥只写入钥匙串。翻译优先取唤起前选中的文本，没有选中文本时再读剪贴板，中文默认译英、其他语言默认译中。
 
-### 两步验证
+![剪贴板](docs/screenshots/clipboard.png)
 
-两步验证插件按 RFC 6238 生成 TOTP 动态口令，支持 SHA-1、SHA-256、SHA-512，以及 4–10 位验证码与 1–600 秒刷新周期的自定义账户。
+设置页分为「应用设置」与「插件设置」两组，可以启用停用插件、修改搜索关键词、绑定关键词快捷键，以及配置菜单栏图标、面板透明度、最近使用布局、登录时启动、语言和配置导入导出：
 
-导入方式有三种：手动输入 Base32 密钥、粘贴 `otpauth://` 链接，或批量导入。批量导入既能读二维码截图（按 `⌃⇧⌘4` 截图后回到插件点「识别二维码」，由系统 Vision 在本机解析，也可以选择已保存的图片文件），也能直接读入 Ente Auth 等应用导出的明文 `otpauth://` 文件；把导出文件交给 Luma 打开（`open -a Luma <文件>`）同样可以一次性导入，重复导入相同密钥会被跳过。解析全部在本机完成，不使用摄像头，也不会上传任何内容。
-
-列表按周期实时刷新验证码，回车或点击即复制，倒计时环显示剩余时间，剩余不足 5 秒时验证码标红提醒。验证码可以用工具栏的眼睛按钮或 `⌘H` 隐藏成等宽占位符，适合投屏或旁边有人时使用；隐藏状态下复制照常可用，选择会被记住。密钥只写入 macOS 钥匙串，账户名称等元数据保存在 `UserDefaults`，导出配置不包含密钥。
-
-最短取码路径：`⌥ Space` → 输入 `2fa` → `Enter` 打开插件 → `Enter` 复制选中账户的验证码并收起面板。
-
-### 翻译与 AI
-
-翻译会优先读取唤起前 App 中选中的文本，没有选中文本时再读取剪贴板。输入中文时默认译为英语，其他语言默认译为简体中文；`Enter` 翻译，`Shift Enter` 换行。
-
-AI 管理支持自定义供应商、Base URL、多个模型，以及 OpenAI Chat Completions 和 Anthropic Messages 两种接口格式。API Key 只保存在 macOS 钥匙串中。
-
-### 股票与天气
-
-股票支持 `600115.SS`、`002594.SZ`、`0700.HK` 和 `AAPL` 等代码格式，并提供分时、五日、日 K、周 K 和月 K 走势。
-
-股票与天气均可自动切换数据源，也可在设置中手动指定。数据只在使用对应功能时请求，不下载全市场数据，也不在后台持续轮询。
+![设置](docs/screenshots/settings.png)
 
 ## 基本操作
 
@@ -123,81 +88,53 @@ AI 管理支持自定义供应商、Base URL、多个模型，以及 OpenAI Chat
 | 翻译输入换行 | `Shift Enter` |
 | 粘贴剪贴板条目 | `Enter` 或双击 |
 
-全局唤起快捷键与插件关键词都可以在设置中修改。全局快捷键使用 Carbon Hot Key，本身不需要辅助功能权限。
+搜索结果统一支持打开或复制，App 与文件还能复制路径并在 Finder 中显示。首页把最近打开的插件与 App 排成网格，可平铺混排或分组展示。全局快捷键与插件关键词都可以在设置里改；快捷键走 Carbon Hot Key，本身不需要辅助功能权限。
 
-## 设置
+## 隐私与本地数据
 
-设置页分为两组：
-
-- **应用设置**：通用设置、快捷键管理。
-- **插件设置**：插件管理、剪贴板、两步验证、AI、翻译、股票和天气。
-
-可以启用或停用插件、修改搜索关键词、绑定关键词快捷键，并配置菜单栏图标、面板透明度、最近使用布局、登录时启动、语言和配置导入导出。
-
-## 权限、隐私与本地数据
-
-Luma 只在使用对应能力时访问系统服务或网络。
-
-| 能力 | 用途 |
-| --- | --- |
-| 辅助功能 | 粘贴、读取选中文本、恢复目标窗口和窗口管理 |
-| 钥匙串 | 保存并读取 AI API Key 与两步验证密钥 |
-| 登录项 | 可选地在登录 macOS 后启动 Luma |
-| 网络 | 按需请求股票、天气或用户配置的 AI 服务 |
-
-辅助功能授权与应用的代码身份和安装路径相关。日常运行请保持使用 `/Applications/Luma.app`，避免重复授权或权限失效。
+Luma 只在使用对应能力时访问系统服务或网络：辅助功能用于粘贴、读取选中文本与窗口管理，钥匙串保存 AI API Key 与两步验证密钥，网络仅在请求股票、天气或用户自己配置的 AI 服务时使用。
 
 | 数据 | 存储位置 |
 | --- | --- |
-| 剪贴板历史 | `~/Library/Application Support/Luma/Clipboard` |
-| 剪贴板图片 | `~/Library/Application Support/Luma/Clipboard/images` |
+| 剪贴板历史与图片 | `~/Library/Application Support/Luma/Clipboard`（不参与系统备份） |
 | 插件与应用设置 | `UserDefaults` |
-| AI API Key | macOS 钥匙串 |
-| 两步验证密钥 | macOS 钥匙串 |
+| AI API Key、两步验证密钥 | macOS 钥匙串 |
 
-剪贴板历史在本地持久化，其目录被标记为不参与系统备份。配置导出包含快捷键、插件设置、自选股票和天气地点等数据，但不包含钥匙串中的 API Key 与两步验证密钥。
+配置导出包含快捷键、插件设置、自选股票和天气地点，不包含钥匙串中的任何密钥。二维码只在本机用 Vision 识别，不会上传。只有选择 AI 翻译时，Luma 才会把待翻译文本发往用户配置的接口。
 
-Apple Translation 复用系统能力。只有选择 AI 翻译时，Luma 才会向用户配置的接口发送待翻译文本。
+辅助功能授权与应用的身份和安装路径绑定，日常使用请保持 `/Applications/Luma.app`，避免重复授权或权限失效。
 
 ## 开发
 
-### 构建与测试
-
 ```bash
-# 运行完整测试套件
-./scripts/test-core.sh
-
-# 生成本地签名的应用目录
-./scripts/build-app.sh
+./scripts/test-core.sh     # 完整测试套件（等价于 swift test）
+./scripts/build-app.sh     # 生成本地签名的应用目录，产物在 dist/Luma.build
+./scripts/build-app.sh --universal   # 同时编译 arm64 与 x86_64
 ```
 
-构建产物位于 `dist/Luma.build`。项目使用 Swift Package Manager，当前不依赖第三方软件包。
-
-测试脚本等价于在项目根目录执行 `swift test`。
-
-### 项目结构
+项目使用 Swift Package Manager，不依赖任何第三方软件包。
 
 ```text
 Sources/Luma/
-├── AppDelegate.swift              # 生命周期、窗口与依赖装配
-├── Launcher*.swift                # 启动器状态、搜索、会话与界面
-├── Plugin.swift                   # 插件类型与统一元数据
-├── *PluginView*.swift             # 各插件的原生 SwiftUI 界面
-├── *Service.swift                 # 日历、股票、天气与 AI 服务
-├── Clipboard*.swift               # 剪贴板采集、粘贴与本地存储
-├── SettingsView.swift             # 分类设置界面
-└── Localization.swift             # 中文与 English 本地化
+├── AppDelegate.swift        # 生命周期、窗口与依赖装配
+├── Launcher*.swift          # 启动器状态、搜索、会话与界面
+├── Plugin.swift             # 插件类型与统一元数据（CommandCatalog）
+├── *PluginView*.swift       # 各插件的原生 SwiftUI 界面
+├── *Service.swift           # 日历、股票、天气与 AI 服务
+├── Clipboard*.swift         # 剪贴板采集、粘贴与本地存储
+├── SettingsView.swift       # 分类设置界面
+└── Localization.swift       # 中文与 English 本地化
 
-Tests/LumaTests/                   # 核心、日历、性能与功能测试
-scripts/                           # 构建、安装与测试脚本
-Resources/                         # Info.plist 与应用图标
+Tests/LumaTests/             # 核心、日历、性能与功能测试
+scripts/                     # 构建、打包、安装与测试脚本
+Resources/                   # Info.plist 与应用图标
+docs/screenshots/            # README 截图
 ```
 
-`CommandCatalog` 是插件元数据的唯一来源。插件均为编译期原生模块，不加载第三方网页或运行时插件代码。
+`CommandCatalog` 是插件元数据的唯一来源。插件都是编译期原生模块，不加载第三方网页或运行时插件代码。
 
-## 数据源与限制
+## 已知限制
 
-- 股票和天气依赖公网服务，可能出现延迟、中断或上游字段变化；自动模式会在请求失败时尝试其他来源。
-- 股票行情仅用于信息展示，不构成投资建议。
-- 日历中的法定节假日与调休安排目前内置 2025、2026 年。其他年份仍显示周末、农历和传统节日；节气计算覆盖 2000–2099 年，且不会推测调休。
-- 当前构建脚本只生成 Apple Silicon（`arm64`）版本。
+- 应用未经 Apple 公证，首次启动需要手动放行（见[安装](#安装)）。
+- 股票和天气依赖公网服务，可能延迟、中断或受上游字段变化影响；自动模式会在失败时尝试其他来源。行情仅用于信息展示，不构成投资建议。
+- 日历中的法定节假日与调休安排目前内置 2025、2026 年，其他年份仍显示周末、农历与传统节日；节气覆盖 2000–2099 年，且不推测调休。
