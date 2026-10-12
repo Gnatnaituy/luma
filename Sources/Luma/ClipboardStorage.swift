@@ -52,6 +52,25 @@ enum ClipboardStorageLimit: Int, CaseIterable, Identifiable, Codable {
     var title: String { rawValue == 1_024 ? "1 GB" : "\(rawValue) MB" }
 }
 
+/// 剪贴板列表里图片条目的默认呈现方式。
+enum ClipboardImagePreviewSize: String, CaseIterable, Identifiable, Codable {
+    /// 默认把截图铺开显示：不用点「展开图片」也能大致看清内容。
+    case large
+    case compact
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .large: L10n.text("大图", "Large")
+        case .compact: L10n.text("紧凑", "Compact")
+        }
+    }
+
+    /// 大图模式下图片条目默认展开；紧凑模式保留只显示缩略图的老样子。
+    var expandsImagesByDefault: Bool { self == .large }
+}
+
 struct ClipboardImage: Equatable {
     private static let thumbnailCache: NSCache<NSString, NSImage> = {
         let cache = NSCache<NSString, NSImage>()

@@ -135,26 +135,21 @@ struct ClipboardPluginView: View {
             } else {
                 ScrollViewReader { proxy in
                     ScrollView {
-                        LazyVStack(spacing: 0) {
+                        LazyVStack(spacing: 8) {
                             ForEach(visibleEntries) { entry in
                                 ClipboardEntryRow(
                                     entry: entry,
                                     clipboard: clipboard,
+                                    previewSize: clipboard.imagePreviewSize,
+                                    isSelected: selectionState.selectedID == entry.id,
                                     onSelect: { selectionState.select(entry.id) },
                                     onPaste: onPaste
                                 )
-                                    .padding(.horizontal, 24)
-                                    .background {
-                                        if selectionState.selectedID == entry.id {
-                                            RoundedRectangle(cornerRadius: 9, style: .continuous)
-                                                .fill(Color.accentColor.opacity(0.09))
-                                                .padding(.horizontal, 18)
-                                        }
-                                    }
+                                    .padding(.horizontal, 14)
                                     .id(entry.id)
-                                Divider().padding(.horizontal, 24)
                             }
                         }
+                        .padding(.vertical, 10)
                     }
                     .onChange(of: scrollRequest) { _, request in
                         guard let request else { return }
@@ -369,24 +364,39 @@ struct ClipboardSelectionState {
 }
 
 struct ClipboardEntryRow: View {
+    /// 图片条目的预览度量：缩略图维持行高，大图限制高度，避免竖版截图把列表撑得太长。
+    static let thumbnailSize = CGSize(width: 72, height: 56)
+    static let thumbnailSourceDimension: CGFloat = 144
+    static let expandedPreviewMaxHeight: CGFloat = 340
+    static let expandedSourceDimension: CGFloat = 1_280
+
     let entry: ClipboardEntry
     @ObservedObject var clipboard: ClipboardMonitor
+    let previewSize: ClipboardImagePreviewSize
+    let isSelected: Bool
     let onSelect: () -> Void
     let onPaste: (ClipboardEntry) -> Void
     @State private var isImageExpanded: Bool
+    @State private var isHovering = false
 
     init(
         entry: ClipboardEntry,
         clipboard: ClipboardMonitor,
-        initiallyExpanded: Bool = false,
+        previewSize: ClipboardImagePreviewSize = .large,
+        isSelected: Bool = false,
+        initiallyExpanded: Bool? = nil,
         onSelect: @escaping () -> Void = {},
         onPaste: @escaping (ClipboardEntry) -> Void = { _ in }
     ) {
         self.entry = entry
         self.clipboard = clipboard
+        self.previewSize = previewSize
+        self.isSelected = isSelected
         self.onSelect = onSelect
         self.onPaste = onPaste
-        _isImageExpanded = State(initialValue: initiallyExpanded)
+        _isImageExpanded = State(
+            initialValue: initiallyExpanded ?? previewSize.expandsImagesByDefault
+        )
     }
 
     var body: some View {
@@ -424,13 +434,8 @@ struct ClipboardEntryRow: View {
             }
 
             if let storedImage = imagePayload {
-                if isImageExpanded, let image = storedImage.makeImage() {
-                    Image(nsImage: image)
-                        .resizable()
-                        .scaledToFit()
-                        .frame(maxWidth: .infinity)
-                        .background(Color.primary.opacity(0.025), in: RoundedRectangle(cornerRadius: 9))
-                        .clipShape(RoundedRectangle(cornerRadius: 9))
+                if isImageExpanded {
+                    expandedPreview(for: storedImage)
                 }
 
                 Button {
@@ -454,8 +459,28 @@ struct ClipboardEntryRow: View {
                     : L10n.text("展开图片", "Expand Image"))
             }
         }
-        .padding(.vertical, 6)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
         .frame(maxWidth: .infinity)
+        .background(cardFill, in: RoundedRectangle(cornerRadius: LumaRadius.card, style: .continuous))
+        .overlay {
+            if isSelected {
+                LumaRimStroke(cornerRadius: LumaRadius.card, isProminent: true)
+            }
+        }
+        .contentShape(RoundedRectangle(cornerRadius: LumaRadius.card, style: .continuous))
+        .animation(LumaMotion.quick, value: isSelected)
+        .onHover { isHovering = $0 }
+        .onChange(of: previewSize) { _, size in
+            // 设置变化后已经建好的行也要跟着切换默认形态。
+            isImageExpanded = size.expandsImagesByDefault
+        }
+    }
+
+    /// 卡片底色负责把相邻条目分开：选中 > 悬停 > 静息。
+    private var cardFill: Color {
+        if isSelected { return LumaTone.selectionFill }
+        return isHovering ? LumaTone.hoverFill : LumaTone.cardFill
     }
 
     private var actionButtons: some View {
@@ -501,16 +526,54 @@ struct ClipboardEntryRow: View {
         return storedImage
     }
 
+    /// 大图的显示尺寸：按原始比例塞进「高度上限」框，超宽截图再受宽度上限约束。
+    /// 直接算出具体尺寸，容器、描边和点击区域才都贴着图片本身。
+    static func expandedPreviewSize(for image: NSImage) -> CGSize {
+        let maximumWidth: CGFloat = 560
+        let ratio = image.size.width / max(image.size.height, 1)
+        guard ratio.isFinite, ratio > 0 else {
+            return CGSize(width: maximumWidth, height: expandedPreviewMaxHeight)
+        }
+        let width = min(maximumWidth, expandedPreviewMaxHeight * ratio)
+        return CGSize(width: width, height: width / ratio)
+    }
+
+    @ViewBuilder
+    private func expandedPreview(for storedImage: ClipboardImage) -> some View {
+        if let image = storedImage.thumbnail(maxDimension: Self.expandedSourceDimension) {
+            let size = Self.expandedPreviewSize(for: image)
+            Image(nsImage: image)
+                .resizable()
+                .scaledToFit()
+                .frame(width: size.width, height: size.height)
+                .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                        .strokeBorder(LumaTone.hairline, lineWidth: 1)
+                }
+                .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+                .onTapGesture { openImageInPreview(storedImage) }
+                .help(L10n.text(
+                    "在 macOS Preview 中按原始尺寸查看",
+                    "View at full size in macOS Preview"
+                ))
+                .accessibilityLabel(L10n.text(
+                    "在 macOS Preview 中按原始尺寸查看",
+                    "View at full size in macOS Preview"
+                ))
+        }
+    }
+
     @ViewBuilder
     private var preview: some View {
         switch entry.payload {
         case .image(let storedImage):
-            if let image = storedImage.thumbnail(maxDimension: 144) {
+            if let image = storedImage.thumbnail(maxDimension: Self.thumbnailSourceDimension) {
                 ZStack(alignment: .topTrailing) {
                     Image(nsImage: image)
                         .resizable()
                         .scaledToFill()
-                        .frame(width: 72, height: 56)
+                        .frame(width: Self.thumbnailSize.width, height: Self.thumbnailSize.height)
                         .clipShape(RoundedRectangle(cornerRadius: 7))
 
                     Button { openImageInPreview(storedImage) } label: {
@@ -522,7 +585,7 @@ struct ClipboardEntryRow: View {
                     .help(L10n.text("使用 macOS Preview 查看", "View in macOS Preview"))
                     .accessibilityLabel(L10n.text("使用 macOS Preview 查看", "View in macOS Preview"))
                 }
-                .frame(width: 72, height: 56)
+                .frame(width: Self.thumbnailSize.width, height: Self.thumbnailSize.height)
             }
         default:
             Image(systemName: entry.kind.symbol)

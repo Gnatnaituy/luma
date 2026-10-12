@@ -61,7 +61,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         case .application: L10n.text("配置 Luma 的系统集成与显示方式", "Configure Luma's system integration and appearance")
         case .shortcuts: L10n.text("配置全局唤起与关键词快捷键", "Configure global and keyword shortcuts")
         case .pluginKeywords: L10n.text("控制插件启用状态与搜索关键词", "Control plugin availability and search keywords")
-        case .clipboard: L10n.text("设置历史记录的本地保存时长", "Configure local clipboard history retention")
+        case .clipboard: L10n.text("设置图片预览与历史记录的保存方式", "Configure image previews and clipboard history retention")
         case .twoFactor: L10n.text("管理动态口令账户与复制行为", "Manage TOTP accounts and copy behavior")
         case .ai: L10n.text("管理供应商、API 协议、密钥与模型", "Manage providers, API formats, keys, and models")
         case .translation: L10n.text("选择系统翻译或指定 AI 模型", "Choose Apple Translation or a configured AI model")
@@ -612,6 +612,31 @@ struct SettingsView: View {
 
     private var clipboardContent: some View {
         VStack(alignment: .leading, spacing: 16) {
+            HStack(alignment: .center, spacing: 24) {
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(L10n.text("图片预览", "Image Preview"))
+                        .font(.headline)
+                    Text(L10n.text(
+                        "大图会直接铺开截图，不用点开也能大致看清内容；紧凑只保留缩略图，列表更密。",
+                        "Large spreads screenshots out so they are recognizable without expanding; Compact keeps thumbnails only for a denser list."
+                    ))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                LumaMenuPicker(
+                    selection: Binding(
+                        get: { clipboard.imagePreviewSize },
+                        set: { clipboard.updateImagePreviewSize($0) }
+                    ),
+                    values: ClipboardImagePreviewSize.allCases,
+                    title: { $0.title }
+                )
+                .frame(width: 150)
+            }
+
+            Divider()
+
             HStack(alignment: .center, spacing: 24) {
                 VStack(alignment: .leading, spacing: 5) {
                     Text(L10n.text("历史保存时长", "History Retention"))

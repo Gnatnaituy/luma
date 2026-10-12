@@ -908,15 +908,53 @@ struct CoreTests {
         )
         let expandableImageEntry = ClipboardEntry(payload: .image(ClipboardImage(data: validPNG)))
         let imageClipboard = ClipboardMonitor(entries: [expandableImageEntry])
-        let collapsedImageHeight = fittingHeight(
-            ClipboardEntryRow(entry: expandableImageEntry, clipboard: imageClipboard),
+        let compactImageHeight = fittingHeight(
+            ClipboardEntryRow(entry: expandableImageEntry, clipboard: imageClipboard, previewSize: .compact),
             width: 650
         )
         let expandedImageHeight = fittingHeight(
-            ClipboardEntryRow(entry: expandableImageEntry, clipboard: imageClipboard, initiallyExpanded: true),
+            ClipboardEntryRow(
+                entry: expandableImageEntry,
+                clipboard: imageClipboard,
+                previewSize: .compact,
+                initiallyExpanded: true
+            ),
             width: 650
         )
-        try expect(expandedImageHeight > collapsedImageHeight + 100, "clipboard image expands to page width")
+        try expect(expandedImageHeight > compactImageHeight + 100, "clipboard image expands to page width")
+
+        // 默认大图：图片条目不用点开就占住大块版面，同时用高度上限兜住竖版长截图。
+        let defaultImageHeight = fittingHeight(
+            ClipboardEntryRow(entry: expandableImageEntry, clipboard: imageClipboard),
+            width: 650
+        )
+        try expect(
+            defaultImageHeight > compactImageHeight + 100,
+            "clipboard images preview large by default: compact=\(compactImageHeight), default=\(defaultImageHeight)"
+        )
+        try expect(
+            defaultImageHeight <= compactImageHeight + ClipboardEntryRow.expandedPreviewMaxHeight + 8,
+            "the default large preview stays bounded: compact=\(compactImageHeight), default=\(defaultImageHeight)"
+        )
+
+        let previewSuiteName = "app.luma.clipboard-preview-tests." + UUID().uuidString
+        let previewDefaults = UserDefaults(suiteName: previewSuiteName)!
+        previewDefaults.removePersistentDomain(forName: previewSuiteName)
+        defer { previewDefaults.removePersistentDomain(forName: previewSuiteName) }
+        let defaultPreviewMonitor = ClipboardMonitor(entries: [], settings: previewDefaults)
+        try expect(
+            defaultPreviewMonitor.imagePreviewSize == .large,
+            "clipboard image preview defaults to the large layout"
+        )
+        defaultPreviewMonitor.updateImagePreviewSize(.compact)
+        try expect(
+            ClipboardMonitor(entries: [], settings: previewDefaults).imagePreviewSize == .compact,
+            "clipboard image preview preference persists"
+        )
+        try expect(
+            SettingsBackup.supportedKeys.contains("luma.clipboard.image-preview-size.v1"),
+            "clipboard image preview preference is part of the exported configuration"
+        )
 
         let pluginSuiteName = "app.luma.plugin-tests." + UUID().uuidString
         let pluginDefaults = UserDefaults(suiteName: pluginSuiteName)!

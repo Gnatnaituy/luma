@@ -161,6 +161,7 @@ final class ClipboardMonitor: ObservableObject {
     @Published private(set) var entries: [ClipboardEntry] = []
     @Published private(set) var retentionPeriod: ClipboardRetentionPeriod
     @Published private(set) var storageLimit: ClipboardStorageLimit
+    @Published private(set) var imagePreviewSize: ClipboardImagePreviewSize
     private var lastChangeCount = NSPasteboard.general.changeCount
     private var timer: Timer?
     private let storage: ClipboardStorage?
@@ -171,6 +172,7 @@ final class ClipboardMonitor: ObservableObject {
     private var lastPurgeDate: Date
     private static let retentionKey = "luma.clipboard.retention.v1"
     private static let storageLimitKey = "luma.clipboard.storage-limit.v1"
+    private static let imagePreviewSizeKey = "luma.clipboard.image-preview-size.v1"
     private static let storageFormatKey = "luma.clipboard.storage-format.v2"
     private static let currentStorageFormat = 2
 
@@ -180,6 +182,7 @@ final class ClipboardMonitor: ObservableObject {
         settings: UserDefaults = .standard,
         retentionPeriod: ClipboardRetentionPeriod? = nil,
         storageLimit: ClipboardStorageLimit? = nil,
+        imagePreviewSize: ClipboardImagePreviewSize? = nil,
         referenceDate: Date = Date()
     ) {
         self.settings = settings
@@ -189,8 +192,11 @@ final class ClipboardMonitor: ObservableObject {
             rawValue: settings.integer(forKey: Self.storageLimitKey)
         )
         let resolvedStorageLimit = storageLimit ?? savedStorageLimit ?? .fiveHundredMB
+        let savedImagePreviewSize = settings.string(forKey: Self.imagePreviewSizeKey)
+            .flatMap(ClipboardImagePreviewSize.init(rawValue:))
         self.retentionPeriod = resolvedRetention
         self.storageLimit = resolvedStorageLimit
+        self.imagePreviewSize = imagePreviewSize ?? savedImagePreviewSize ?? .large
         self.lastPurgeDate = referenceDate
 
         let resolvedStorage = storage ?? (entries == nil ? ClipboardStorage() : nil)
@@ -295,6 +301,12 @@ final class ClipboardMonitor: ObservableObject {
         settings.set(limit.rawValue, forKey: Self.storageLimitKey)
         enforceStorageLimit()
         persist()
+    }
+
+    func updateImagePreviewSize(_ size: ClipboardImagePreviewSize) {
+        guard imagePreviewSize != size else { return }
+        imagePreviewSize = size
+        settings.set(size.rawValue, forKey: Self.imagePreviewSizeKey)
     }
 
     func purgeExpired(referenceDate: Date = Date(), forcePersistence: Bool = false) {
